@@ -13,14 +13,11 @@ import 'table_detector.dart';
 
 /// Data satu halaman untuk tahap perakitan (semua bisa dikirim ke Isolate).
 class AssemblyPage {
-  AssemblyPage(this.analysis, this.ocr, this.mosaicA, this.mosaicB,
-      [this.ai = const []]);
+  AssemblyPage(this.analysis, this.ocr, this.mosaicA, this.mosaicB);
   final PageAnalysis analysis;
   final OcrPage ocr; // koordinat gambar ternormalisasi
   final List<OcrPage> mosaicA, mosaicB;
 
-  /// Bacaan Gemini per tabel: indeks sel -> teks (kosong bila tidak dipakai).
-  final List<Map<int, String>> ai;
 }
 
 /// Tahap 3: gabungkan struktur tabel, hasil OCR halaman & OCR per sel,
@@ -61,16 +58,17 @@ abstract final class PageAssembler {
     final landscape = a.width > a.height;
     final pxToPt = (landscape ? 842.0 : 595.0) / a.width;
     var boxes = _dropWatermark(p.ocr.boxes);
-    for (final info in a.tables) {
+    // kolom yang garisnya tidak terlihat di foto dipulihkan dari celah teks
+    final tables = [for (final t in a.tables) _splitColumnsByText(t, boxes)];
+    for (final info in tables) {
       boxes = _splitAcrossCells(boxes, info);
     }
 
     final elements = <PageElement>[];
     final used = List<bool>.filled(boxes.length, false);
 
-    for (var ti = 0; ti < a.tables.length; ti++) {
-      final info = a.tables[ti];
-      final aiTexts = ti < p.ai.length ? p.ai[ti] : const <int, String>{};
+    for (var ti = 0; ti < tables.length; ti++) {
+      final info = tables[ti];
       final cands = <TableCell, List<OcrCandidate>>{};
       final cells = <TableCell>[];
       for (var cellIndex = 0; cellIndex < info.cells.length; cellIndex++) {
@@ -128,10 +126,6 @@ abstract final class PageAssembler {
             if (hits.isNotEmpty) list.add(_join(hits, src));
           }
         }
-        final aiText = aiTexts[cellIndex];
-        if (aiText != null && aiText.trim().isNotEmpty) {
-          list.add(OcrCandidate(aiText.trim(), 0.97, 'ai'));
-        }
         cands[cell] = list;
       }
       final table = TableData(
@@ -153,11 +147,11 @@ abstract final class PageAssembler {
     // teks di luar tabel
     final free = [
       for (var i = 0; i < boxes.length; i++)
-        if (!used[i] && !_insideTable(boxes[i], a.tables)) boxes[i]
+        if (!used[i] && !_insideTable(boxes[i], tables)) boxes[i]
     ];
     final freePage = OcrPage(
         index: p.ocr.index, width: p.ocr.width, height: p.ocr.height, boxes: free);
-    if (a.tables.isEmpty && kind == DocumentKind.table) {
+    if (tables.isEmpty && kind == DocumentKind.table) {
       final layout = LayoutAnalyzer.analyze(freePage);
       final t = TableDetector.detect(layout, force: force == DocumentKind.table);
       if (t != null) {
@@ -182,6 +176,142 @@ abstract final class PageAssembler {
       height: a.height.toDouble(),
       elements: elements,
       imagePath: a.imagePath,
+    );
+  }
+
+  /// Garis kolom yang tidak terdeteksi (pudar/tertutup warna di foto)
+  /// ditemukan dari celah kosong yang konsisten di antara kata-kata pada
+  /// banyak baris kolom yang sama; kolom lalu dipecah di posisi itu.
+  static TableInfo _splitColumnsByText(TableInfo t, List<OcrBox> boxes) {
+    var info = t;
+    for (var c = info.colWidths.length - 1; c >= 0; c--) {
+      final x = _hiddenBoundary(info, c, boxes);
+      if (x != null) info = _splitColumn(info, c, x, boxes);
+    }
+    return info;
+  }
+
+  static double? _hiddenBoundary(TableInfo t, int c, List<OcrBox> boxes) {
+    var x0 = t.left;
+    for (var k = 0; k < c; k++) {
+      x0 += t.colWidths[k];
+    }
+    final cw = t.colWidths[c];
+    final x1 = x0 + cw;
+    if (cw <= 0) return null;
+    final gaps = <double>[];
+    var rowsWithWords = 0;
+    for (final cell in t.cells) {
+      if (cell.col != c || cell.colSpan != 1) continue;
+      final words = [
+        for (final b in boxes)
+          if ((b.left + b.right) / 2 >= cell.box[0] &&
+              (b.left + b.right) / 2 < cell.box[2] &&
+              b.centerY >= cell.box[1] &&
+              b.centerY < cell.box[3])
+            b
+      ]..sort((a, b) => a.left.compareTo(b.left));
+      if (words.isEmpty) continue;
+      rowsWithWords++;
+      if (words.length < 2) continue;
+      final hs = words.map((w) => w.height).toList()..sort();
+      final h = hs[hs.length ~/ 2];
+      var best = 0.0, at = 0.0;
+      for (var i = 1; i < words.length; i++) {
+        final g = words[i].left - words[i - 1].right;
+        if (g > best) {
+          best = g;
+          at = (words[i].left + words[i - 1].right) / 2;
+        }
+      }
+      if (best > math.max(1.0 * h, cw * 0.06)) gaps.add(at);
+    }
+    if (gaps.length < 3 || rowsWithWords < 4) return null;
+    gaps.sort();
+    // kelompok celah terbesar
+    final tol = cw * 0.07;
+    var bestStart = 0, bestLen = 0;
+    for (var i = 0; i < gaps.length; i++) {
+      var j = i;
+      while (j + 1 < gaps.length && gaps[j + 1] - gaps[i] <= 2 * tol) {
+        j++;
+      }
+      if (j - i + 1 > bestLen) {
+        bestLen = j - i + 1;
+        bestStart = i;
+      }
+    }
+    if (bestLen < math.max(3, rowsWithWords * 0.45)) return null;
+    final grp = gaps.sublist(bestStart, bestStart + bestLen);
+    final x = grp[grp.length ~/ 2];
+    if (x - x0 < cw * 0.12 || x1 - x < cw * 0.12) return null;
+    return x;
+  }
+
+  static TableInfo _splitColumn(TableInfo t, int c, double x, List<OcrBox> boxes) {
+    var x0 = t.left;
+    for (var k = 0; k < c; k++) {
+      x0 += t.colWidths[k];
+    }
+    final widths = [
+      ...t.colWidths.sublist(0, c),
+      x - x0,
+      t.colWidths[c] - (x - x0),
+      ...t.colWidths.sublist(c + 1),
+    ];
+    bool wordsIn(double l, double r, List<double> box) => boxes.any((b) =>
+        (b.left + b.right) / 2 >= l &&
+        (b.left + b.right) / 2 < r &&
+        b.centerY >= box[1] &&
+        b.centerY < box[3]);
+    bool straddles(List<double> box) => boxes.any((b) =>
+        b.centerY >= box[1] &&
+        b.centerY < box[3] &&
+        b.left < x - 2 &&
+        b.right > x + 2 &&
+        (b.left + b.right) / 2 >= box[0] &&
+        (b.left + b.right) / 2 < box[2]);
+    final cells = <CellInfo>[];
+    CellInfo copy(CellInfo ci, {int? col, int? colSpan, List<double>? box, bool? ink, int? slot}) {
+      final n = CellInfo(
+        row: ci.row,
+        col: col ?? ci.col,
+        rowSpan: ci.rowSpan,
+        colSpan: colSpan ?? ci.colSpan,
+        box: box ?? ci.box,
+        fill: ci.fill,
+        hasInk: ink ?? ci.hasInk,
+        ink: ci.ink,
+        align: ci.align,
+        inkHeight: ci.inkHeight,
+        checkbox: ci.checkbox,
+      );
+      n.slot = slot ?? ci.slot;
+      return n;
+    }
+
+    for (final ci in t.cells) {
+      if (ci.col > c) {
+        cells.add(copy(ci, col: ci.col + 1));
+      } else if (ci.col + ci.colSpan - 1 < c) {
+        cells.add(ci);
+      } else if (ci.colSpan == 1 && !straddles(ci.box) && ci.checkbox == 0) {
+        final lb = [ci.box[0], ci.box[1], x, ci.box[3]];
+        final rb = [x, ci.box[1], ci.box[2], ci.box[3]];
+        final lw = wordsIn(ci.box[0], x, ci.box), rw = wordsIn(x, ci.box[2], ci.box);
+        final anyWords = lw || rw;
+        cells.add(copy(ci, box: lb, ink: lw || (!anyWords && ci.hasInk), slot: -1));
+        cells.add(copy(ci, col: c + 1, box: rb, ink: rw, slot: -1));
+      } else {
+        cells.add(copy(ci, colSpan: ci.colSpan + 1));
+      }
+    }
+    return TableInfo(
+      colWidths: widths,
+      rowHeights: t.rowHeights,
+      left: t.left,
+      top: t.top,
+      cells: cells,
     );
   }
 

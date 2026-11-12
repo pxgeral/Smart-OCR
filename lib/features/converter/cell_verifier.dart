@@ -9,7 +9,7 @@ class OcrCandidate {
   final double confidence;
 
   /// 'page' = OCR halaman penuh, 'crop' = potongan sel warna asli,
-  /// 'norm' = potongan sel kontras dinormalisasi, 'ai' = Gemini,
+  /// 'norm' = potongan sel kontras dinormalisasi,
   /// 'box' = kotak centang.
   final String source;
 }
@@ -395,7 +395,6 @@ abstract final class CellVerifier {
           if (j != i && _same(fixes[j].value, f.value)) agree++;
         }
         final bias = switch (cands[i].source) {
-          'ai' => 0.3,
           'crop' => 0.06,
           'norm' => 0.03,
           _ => 0.0,

@@ -105,6 +105,8 @@ class TableStructureDetector {
   List<DetectedTable> detect() {
     if (_w < 200 || _h < 200) return const [];
     _buildMasks();
+    // ruas pendek disambung dulu (garis agak miring/melengkung di foto
+    // terputus jadi potongan pendek), baru disaring panjang minimumnya
     var hs = _chain(_runs(_hm, true, (28 * unit).round()));
     var vs = _chain(_runs(_vm, false, (20 * unit).round()));
     final tol = 7 * unit;
@@ -139,12 +141,17 @@ class TableStructureDetector {
     final vm = Uint8List(w * h);
     const t = 40, te = 50, tu = 18;
 
+    // ambang adaptif: garis gelap tipis di atas sel berwarna/gelap (mis. biru)
+    // kontrasnya lebih kecil daripada di atas kertas putih
     bool ridge(int i, int step) {
       final c = l[i];
       for (var k = 2; k <= 4; k++) {
         final a = l[i - k * step], b = l[i + k * step];
         final d1 = a - c, d2 = b - c;
-        if (math.min(d1, d2) > t || math.min(-d1, -d2) > t) return true;
+        final lo = math.min(a, b);
+        // ambang adaptif: garis tipis di atas sel berwarna kontrasnya kecil
+        final td = lo >= 200 ? t : math.max(24, (lo * 0.22).round());
+        if (math.min(d1, d2) > td || math.min(-d1, -d2) > t) return true;
       }
       return false;
     }
@@ -176,7 +183,7 @@ class TableStructureDetector {
       for (var x = 1; x < w; x++) {
         final i = y * w + x;
         _hm[i] = hm[i] | hm[i - w];
-        _vm[i] = vm[i] | vm[i - 1];
+        _vm[i] = vm[i] | vm[i - 1] | (x + 1 < w ? vm[i + 1] : 0);
       }
     }
   }
@@ -229,8 +236,10 @@ class TableStructureDetector {
       }
       active = [for (final c in active) if (p - c.lastP <= tol + 1) c];
     }
+    _joinEnds(chains, tol + 1, gap);
     final out = <GridLine>[];
     for (final c in chains) {
+      if (c.pieces.isEmpty) continue;
       var ws = 0.0, mm = 0.0, pm = 0.0;
       for (final (pp, ps, pe) in c.pieces) {
         final w = (pe - ps + 1).toDouble();
@@ -261,10 +270,57 @@ class TableStructureDetector {
         covered += pe - (ps > cur + 1 ? ps : cur + 1) + 1;
         cur = pe;
       }
-      if (covered < 0.8 * (c.e - c.s + 1)) continue;
+      if (covered < 0.85 * (c.e - c.s + 1)) continue;
       out.add(GridLine(pm, c.s, c.e, slope, mm));
     }
     return out;
+  }
+
+  /// Sambung rantai yang berurutan ujung-ke-ujung (garis bergelombang di
+  /// foto kertas melengkung): posisi di ujung A ~ posisi di awal B.
+  void _joinEnds(List<_Chain> chains, int tol, int gap) {
+    double endPos(_Chain c, bool atEnd) {
+      final ref = atEnd ? c.e : c.s;
+      var ws = 0.0, p = 0.0;
+      for (final (pp, ps, pe) in c.pieces) {
+        final near = atEnd ? pe >= ref - 15 : ps <= ref + 15;
+        if (!near) continue;
+        final w = (pe - ps + 1).toDouble();
+        ws += w;
+        p += w * pp;
+      }
+      return ws == 0 ? c.lastP.toDouble() : p / ws;
+    }
+
+    chains.sort((a, b) => a.s.compareTo(b.s));
+    var merged = true;
+    var guard = 0;
+    while (merged && guard++ < 6) {
+      merged = false;
+      for (var i = 0; i < chains.length; i++) {
+        final a = chains[i];
+        if (a.pieces.isEmpty) continue;
+        _Chain? best;
+        var bestD = double.infinity;
+        for (var j = 0; j < chains.length; j++) {
+          final b = chains[j];
+          if (j == i || b.pieces.isEmpty) continue;
+          if (b.s < a.e - 4 || b.s > a.e + gap) continue;
+          final d = (endPos(a, true) - endPos(b, false)).abs();
+          if (d <= tol && d < bestD) {
+            bestD = d;
+            best = b;
+          }
+        }
+        if (best != null) {
+          a.pieces.addAll(best.pieces);
+          a.e = math.max(a.e, best.e);
+          a.s = math.min(a.s, best.s);
+          best.pieces.clear();
+          merged = true;
+        }
+      }
+    }
   }
 
   bool _touches(GridLine line, double t, List<GridLine> others, double tol) {
@@ -606,8 +662,9 @@ class TableStructureDetector {
         cells.add(DetectedCell(r, c, r1 - r + 1, c1 - c + 1));
       }
     }
-    final table = DetectedTable(xs, ys, cells);
-    for (final cell in cells) {
+    final repaired = _repair(DetectedTable(xs, ys, cells), rows, cols);
+    final table = DetectedTable(xs, ys, repaired);
+    for (final cell in repaired) {
       cell.box = table.boxOf(cell.row, cell.col, cell.rowSpan, cell.colSpan);
       cell.fill = cell.rowSpan == 1 && cell.colSpan == 1
           ? base[cell.row][cell.col]
@@ -615,6 +672,104 @@ class TableStructureDetector {
               cell.box[0], cell.box[1], cell.box[2], cell.box[3]);
     }
     return table;
+  }
+
+  /// Perbaikan grid di badan tabel: sel gabungan yang batas dalamnya ada di
+  /// sebagian besar baris/kolom lain dan berisi tulisan di >= 2 bagian
+  /// (garisnya cuma tidak terbaca di foto) dipecah lagi. Gabungan asli
+  /// (judul, "Total") tetap, karena isinya hanya di satu bagian.
+  List<DetectedCell> _repair(DetectedTable t, int rows, int cols) {
+    if (rows < 4 || cols < 2) return t.cells;
+    // peta pemilik sel per posisi grid
+    final owner = List.generate(rows, (_) => List<DetectedCell?>.filled(cols, null));
+    for (final c in t.cells) {
+      for (var r = c.row; r < c.row + c.rowSpan; r++) {
+        for (var k = c.col; k < c.col + c.colSpan; k++) {
+          owner[r][k] = c;
+        }
+      }
+    }
+    // awal badan tabel: baris pertama yang >= 70% posisinya sel tunggal
+    var bodyStart = 0;
+    for (var r = 0; r < rows; r++) {
+      final single = owner[r].where((c) => c != null && c.rowSpan == 1 && c.colSpan == 1).length;
+      if (single >= cols * 0.7) {
+        bodyStart = r;
+        break;
+      }
+    }
+    // batas baris k (antara k-1 dan k) ada di kolom j?
+    bool hRow(int k, int j) => owner[k - 1][j] != owner[k][j];
+    bool vCol(int r, int k) => owner[r][k - 1] != owner[r][k];
+
+    int inkIn(List<double> b) {
+      final w = b[2] - b[0], h = b[3] - b[1];
+      final x0 = (b[0] + math.max(2.0, w * 0.1)).ceil().clamp(0, _w - 1);
+      final x1 = (b[2] - math.max(2.0, w * 0.1)).floor().clamp(0, _w - 1);
+      final y0 = (b[1] + math.max(2.0, h * 0.15)).ceil().clamp(0, _h - 1);
+      final y1 = (b[3] - math.max(2.0, h * 0.15)).floor().clamp(0, _h - 1);
+      final bg = colorLum(image.backgroundColor(b[0], b[1], b[2], b[3]));
+      final thr = math.min(200, bg - 60);
+      var n = 0;
+      for (var y = y0; y <= y1; y++) {
+        for (var x = x0; x <= x1; x++) {
+          if (image.lum[y * _w + x] < thr) n++;
+        }
+      }
+      return n;
+    }
+
+    final out = <DetectedCell>[];
+    for (final c in t.cells) {
+      final merged = c.rowSpan > 1 || c.colSpan > 1;
+      if (!merged || c.row < bodyStart || c.row + c.rowSpan > rows) {
+        out.add(c);
+        continue;
+      }
+      final rowCuts = <int>[c.row];
+      for (var k = c.row + 1; k < c.row + c.rowSpan; k++) {
+        var n = 0, yes = 0;
+        for (var j = 0; j < cols; j++) {
+          if (j >= c.col && j < c.col + c.colSpan) continue;
+          n++;
+          if (hRow(k, j)) yes++;
+        }
+        if (n > 0 && yes >= n * 0.6) rowCuts.add(k);
+      }
+      rowCuts.add(c.row + c.rowSpan);
+      final colCuts = <int>[c.col];
+      for (var k = c.col + 1; k < c.col + c.colSpan; k++) {
+        var n = 0, yes = 0;
+        for (var r = bodyStart; r < rows; r++) {
+          if (r >= c.row && r < c.row + c.rowSpan) continue;
+          n++;
+          if (vCol(r, k)) yes++;
+        }
+        if (n > 0 && yes >= n * 0.6) colCuts.add(k);
+      }
+      colCuts.add(c.col + c.colSpan);
+      if (rowCuts.length == 2 && colCuts.length == 2) {
+        out.add(c);
+        continue;
+      }
+      final pieces = <DetectedCell>[];
+      var inked = 0;
+      for (var a = 0; a < rowCuts.length - 1; a++) {
+        for (var b = 0; b < colCuts.length - 1; b++) {
+          final p = DetectedCell(rowCuts[a], colCuts[b], rowCuts[a + 1] - rowCuts[a],
+              colCuts[b + 1] - colCuts[b]);
+          if (inkIn(t.boxOf(p.row, p.col, p.rowSpan, p.colSpan)) >= 4) inked++;
+          pieces.add(p);
+        }
+      }
+      if (inked >= 2) {
+        out.addAll(pieces);
+      } else {
+        out.add(c);
+      }
+    }
+    out.sort((a, b) => a.row != b.row ? a.row.compareTo(b.row) : a.col.compareTo(b.col));
+    return out;
   }
 }
 

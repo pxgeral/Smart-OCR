@@ -10,6 +10,15 @@ Aplikasi Flutter untuk mengubah hasil scan, foto, dan PDF menjadi dokumen Word (
 - Mengekspor PDF searchable, DOCX, XLSX, dan TXT.
 - Menyimpan riwayat, hasil terstruktur, dan gambar halaman agar bisa ditinjau & diekspor ulang.
 
+### Baru di 1.3
+
+- Opsi AI Gemini dihapus; seluruh pembacaan kembali offline di perangkat.
+- **Struktur tabel lebih tahan foto**: garis tipis di atas sel berwarna (ambang adaptif), garis bergelombang pada kertas melengkung disambung, pelurusan perspektif hanya dipakai bila hasilnya lebih baik.
+- **Perbaikan grid otomatis**: sel gabungan di badan tabel yang garisnya hanya tak terbaca dipecah kembali bila isinya terpisah.
+- **Kolom tanpa garis terlihat** dipulihkan dari celah teks yang konsisten (mis. NO | HARI | TANGGAL yang menyatu).
+- **Pratinjau berkas sumber**: foto/PDF bisa dibuka layar penuh (geser & cubit) sebelum dikonversi.
+- **Terjemahan dokumen** di perangkat (Google ML Kit, 15 bahasa): struktur, angka, tanggal tetap; hasil terjemahan bisa dipratinjau lalu disimpan.
+
 ### Baru di 1.2
 
 - **Pratinjau sebelum file dibuat**: hasil baca ditampilkan seperti tabel aslinya, bisa diperiksa/dikoreksi, baru kemudian disimpan sebagai Excel/Word/PDF/TXT.
@@ -20,7 +29,6 @@ Aplikasi Flutter untuk mengubah hasil scan, foto, dan PDF menjadi dokumen Word (
 - Warna kertas foto (abu-abu/kebiruan) dinormalisasi agar warna sel sesuai aslinya.
 - Kolom **tanggal** (garis miring yang terbaca "1" diperbaiki: `0410312025` → `04/03/2025`) dan **desimal koma** (`5,10`) dikenali.
 - Baris kepala tabel tanpa warna dikenali dari label teks.
-- **AI Gemini (opsional)**: isi sel tabel juga dibaca Gemini (kunci API dari aistudio.google.com) lalu tetap dicek pola kolom & rumus. Tanpa kunci, aplikasi tetap 100% offline.
 
 ### Baru di 1.1
 

@@ -15,6 +15,8 @@ class PdfRasterizer {
   Future<({List<String> paths, Directory dir})> render(
     String pdfPath, {
     void Function(int done, int total)? onProgress,
+    int maxSide = AppConstants.maxImageSide,
+    int? maxPages,
   }) async {
     final doc = await PdfDocument.openFile(pdfPath);
     Directory? outputDir;
@@ -29,11 +31,11 @@ class PdfRasterizer {
               '${base.path}/${DateTime.now().millisecondsSinceEpoch}')
           .create(recursive: true);
       final paths = <String>[];
-      for (var i = 1; i <= total; i++) {
+      final last = maxPages == null ? total : math.min(total, maxPages);
+      for (var i = 1; i <= last; i++) {
         final page = await doc.getPage(i);
         try {
-          final scale = AppConstants.maxImageSide /
-              math.max(page.width, page.height);
+          final scale = maxSide / math.max(page.width, page.height);
           final img = await page.render(
             width: page.width * scale,
             height: page.height * scale,
@@ -49,7 +51,7 @@ class PdfRasterizer {
         } finally {
           await page.close();
         }
-        onProgress?.call(i, total);
+        onProgress?.call(i, last);
       }
       return (paths: paths, dir: outputDir);
     } catch (_) {

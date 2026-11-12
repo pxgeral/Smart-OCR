@@ -5,19 +5,7 @@ class AppSettings {
     this.reviewSheet = true,
     this.markInExcel = false,
     this.dictionary = const [],
-    this.aiEnabled = false,
-    this.aiKey = '',
-    this.aiModel = '',
   });
-
-  /// Bantuan AI Gemini (online) untuk membaca isi sel.
-  final bool aiEnabled;
-  final String aiKey;
-
-  /// Kosong = model bawaan (gemini-flash-latest).
-  final String aiModel;
-
-  bool get aiReady => aiEnabled && aiKey.trim().isNotEmpty;
 
   /// OCR ulang per sel untuk tulisan tangan.
   final bool cellOcr;
@@ -40,9 +28,6 @@ class AppSettings {
     bool? reviewSheet,
     bool? markInExcel,
     List<String>? dictionary,
-    bool? aiEnabled,
-    String? aiKey,
-    String? aiModel,
   }) =>
       AppSettings(
         cellOcr: cellOcr ?? this.cellOcr,
@@ -50,9 +35,6 @@ class AppSettings {
         reviewSheet: reviewSheet ?? this.reviewSheet,
         markInExcel: markInExcel ?? this.markInExcel,
         dictionary: dictionary ?? this.dictionary,
-        aiEnabled: aiEnabled ?? this.aiEnabled,
-        aiKey: aiKey ?? this.aiKey,
-        aiModel: aiModel ?? this.aiModel,
       );
 
   Map<String, dynamic> toMap() => {
@@ -61,9 +43,6 @@ class AppSettings {
         'reviewSheet': reviewSheet,
         'markInExcel': markInExcel,
         'dictionary': dictionary,
-        'aiEnabled': aiEnabled,
-        'aiKey': aiKey,
-        'aiModel': aiModel,
       };
 
   factory AppSettings.fromMap(Map<String, dynamic> m) => AppSettings(
@@ -74,9 +53,6 @@ class AppSettings {
         dictionary: [
           for (final w in (m['dictionary'] as List? ?? const [])) w.toString()
         ],
-        aiEnabled: m['aiEnabled'] as bool? ?? false,
-        aiKey: m['aiKey'] as String? ?? '',
-        aiModel: m['aiModel'] as String? ?? '',
       );
 }
 

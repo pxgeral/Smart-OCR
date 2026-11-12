@@ -6,9 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/enums.dart';
 import '../../models/process_request.dart';
 import '../../services/providers.dart';
-import '../../services/settings_provider.dart';
 import '../review/review_screen.dart';
 import 'process_controller.dart';
+import 'source_viewer.dart';
+import '../translate/translate_sheet.dart';
 
 class ProcessScreen extends ConsumerStatefulWidget {
   const ProcessScreen({super.key, required this.request});
@@ -34,7 +35,6 @@ class _ProcessScreenState extends ConsumerState<ProcessScreen> {
     final s = ref.watch(processControllerProvider);
     final running = s.step == ProcessStep.running;
     final req = widget.request;
-    final ai = ref.watch(settingsProvider).aiReady;
 
     return Scaffold(
       appBar: AppBar(
@@ -54,20 +54,6 @@ class _ProcessScreenState extends ConsumerState<ProcessScreen> {
               enabled: !running,
               onChanged: (v) => setState(() => _choice = v),
             ),
-            const SizedBox(height: 8),
-            Row(children: [
-              Icon(ai ? Icons.auto_awesome : Icons.offline_bolt, size: 16,
-                  color: ai ? Colors.deepPurple : Colors.grey),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  ai
-                      ? 'AI Gemini aktif: isi tabel juga dibaca AI (perlu internet).'
-                      : 'Mode offline (ML Kit). AI Gemini bisa diaktifkan di Pengaturan.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-            ]),
             const SizedBox(height: 16),
           ],
           if (s.step == ProcessStep.failed) ...[
@@ -225,6 +211,28 @@ class _PreviewState extends ConsumerState<_Preview> {
             ctrl.touch();
           },
         ),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.translate),
+              label: Text(s.translatedTo == null ? 'Terjemahkan' : 'Terjemahan: ${s.translatedTo}'),
+              onPressed: () async {
+                final src = ctrl.originalContent;
+                if (src == null) return;
+                final r = await showTranslateSheet(context, src);
+                if (r != null) ctrl.applyTranslation(r.content, r.language);
+              },
+            ),
+          ),
+          if (s.translatedTo != null) ...[
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: ctrl.restoreOriginal,
+              child: const Text('Teks asli'),
+            ),
+          ],
+        ]),
         const SizedBox(height: 16),
         Text('Simpan sebagai', style: theme.textTheme.titleSmall),
         const SizedBox(height: 6),
@@ -302,39 +310,60 @@ class _Saved extends ConsumerWidget {
   }
 }
 
+/// Halaman sumber: ketuk untuk membuka pratinjau penuh (geser & perbesar).
 class _Pages extends StatelessWidget {
   const _Pages({required this.request});
   final ProcessRequest request;
 
+  void _open(BuildContext context, int i) => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => SourceViewer(request: request, initialPage: i),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     if (request.isPdf) {
-      return const ListTile(
-        leading: Icon(Icons.picture_as_pdf, size: 40),
-        title: Text('Dokumen PDF'),
-        subtitle: Text('Halaman dibaca otomatis (maks. 300 halaman)'),
-        contentPadding: EdgeInsets.zero,
+      return Card(
+        margin: EdgeInsets.zero,
+        child: ListTile(
+          leading: const Icon(Icons.picture_as_pdf, size: 40),
+          title: const Text('Dokumen PDF'),
+          subtitle: const Text('Ketuk untuk melihat isi PDF sebelum dikonversi'),
+          trailing: const Icon(Icons.visibility),
+          onTap: () => _open(context, 0),
+        ),
       );
     }
-    return SizedBox(
-      height: 110,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: request.paths.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Image.file(
-            File(request.paths[i]),
-            height: 110,
-            cacheWidth: 240, // lazy + hemat memori
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
-                const SizedBox(width: 80, child: Icon(Icons.broken_image)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 120,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: request.paths.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (_, i) => GestureDetector(
+              onTap: () => _open(context, i),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.file(
+                  File(request.paths[i]),
+                  height: 120,
+                  cacheWidth: 240, // lazy + hemat memori
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) =>
+                      const SizedBox(width: 80, child: Icon(Icons.broken_image)),
+                ),
+              ),
+            ),
           ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Text('Ketuk gambar untuk melihat lebih jelas',
+            style: Theme.of(context).textTheme.bodySmall),
+      ],
     );
   }
 }
-

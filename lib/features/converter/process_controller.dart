@@ -25,7 +25,11 @@ class ProcessState {
     this.suggested,
     this.warnings = const [],
     this.error = '',
+    this.translatedTo,
   });
+
+  /// Nama bahasa terjemahan yang sedang ditampilkan (null = teks asli).
+  final String? translatedTo;
 
   final ProcessStep step;
   final double? progress; // null = indeterminate
@@ -49,6 +53,7 @@ class ProcessController extends Notifier<ProcessState> {
   ConversionResult? _result;
   List<String> _pageImages = const [];
   String _id = '';
+  ConvertedContent? _original;
 
   void reset() {
     if (state.step != ProcessStep.running) {
@@ -95,8 +100,6 @@ class ProcessController extends Notifier<ProcessState> {
               force: choice == OutputType.xlsx ? DocumentKind.table : null,
               cellOcr: settings.cellOcr,
               dictionary: settings.dictionary,
-              aiKey: settings.aiReady ? settings.aiKey : '',
-              aiModel: settings.aiModel,
             ),
             onProgress: _progress,
           );
@@ -118,6 +121,7 @@ class ProcessController extends Notifier<ProcessState> {
 
       _req = req;
       _result = result;
+      _original = null;
       _pageImages = pageImages;
       _id = id;
       state = ProcessState(
@@ -148,7 +152,9 @@ class ProcessController extends Notifier<ProcessState> {
     if (content == null) throw StateError('Tidak ada hasil untuk disimpan');
     if (existing != null) {
       final n = await ref.read(projectsProvider.notifier).saveAndExport(existing, content, type);
-      state = ProcessState(step: ProcessStep.done, project: n, content: content, suggested: type);
+      state = ProcessState(
+          step: ProcessStep.done, project: n, content: content, suggested: type,
+          warnings: state.warnings, translatedTo: state.translatedTo);
       return n;
     }
     final req = _req, result = _result;
@@ -160,7 +166,7 @@ class ProcessController extends Notifier<ProcessState> {
     try {
       final file = await ref.read(exportServiceProvider).export(
             type: type,
-            baseName: req.name,
+            baseName: prev.translatedTo == null ? req.name : '${req.name} (${prev.translatedTo})',
             content: content,
             ocr: content.tables.isEmpty ? result.ocr : null,
             images: _pageImages,
@@ -171,7 +177,7 @@ class ProcessController extends Notifier<ProcessState> {
           : await ref.read(thumbnailServiceProvider).create(_pageImages.first, _id);
       final item = ProjectItem(
         id: _id,
-        name: req.name,
+        name: prev.translatedTo == null ? req.name : '${req.name} (${prev.translatedTo})',
         createdAt: DateTime.now(),
         fileSource: req.paths.first,
         outputType: type,
@@ -182,7 +188,7 @@ class ProcessController extends Notifier<ProcessState> {
       await ref.read(projectsProvider.notifier).add(item);
       state = ProcessState(
           step: ProcessStep.done, project: item, content: content, suggested: type,
-          warnings: prev.warnings);
+          warnings: prev.warnings, translatedTo: prev.translatedTo);
       return item;
     } catch (e) {
       state = prev;
@@ -198,8 +204,40 @@ class ProcessController extends Notifier<ProcessState> {
       project: state.project,
       suggested: state.suggested,
       warnings: state.warnings,
+      translatedTo: state.translatedTo,
     );
   }
+
+  /// Tampilkan hasil terjemahan (teks asli disimpan untuk dikembalikan).
+  void applyTranslation(ConvertedContent translated, String language) {
+    final cur = state.content;
+    if (cur == null) return;
+    _original ??= cur;
+    state = ProcessState(
+      step: state.step == ProcessStep.done ? ProcessStep.done : ProcessStep.preview,
+      content: translated,
+      project: state.project,
+      suggested: state.suggested,
+      warnings: state.warnings,
+      translatedTo: language,
+    );
+  }
+
+  void restoreOriginal() {
+    final o = _original;
+    if (o == null) return;
+    _original = null;
+    state = ProcessState(
+      step: state.step,
+      content: o,
+      project: state.project,
+      suggested: state.suggested,
+      warnings: state.warnings,
+    );
+  }
+
+  /// Teks asli (sebelum diterjemahkan) — sumber terjemahan berikutnya.
+  ConvertedContent? get originalContent => _original ?? state.content;
 }
 
 final processControllerProvider =

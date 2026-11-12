@@ -3,7 +3,6 @@ import 'dart:isolate';
 import '../../models/converted_content.dart';
 import '../../models/enums.dart';
 import '../../models/ocr_result.dart';
-import '../ocr/gemini_reader.dart';
 import '../ocr/ocr_service.dart';
 import 'page_analyzer.dart';
 import 'page_assembler.dart';
@@ -13,8 +12,6 @@ class ConvertOptions {
     this.force,
     this.cellOcr = true,
     this.dictionary = const [],
-    this.aiKey = '',
-    this.aiModel = '',
   });
 
   /// null = otomatis (tabel bila >= setengah halaman bertabel).
@@ -24,10 +21,6 @@ class ConvertOptions {
   /// tulisan tangan).
   final bool cellOcr;
   final List<String> dictionary;
-
-  /// Kunci API Gemini; kosong = tanpa AI (sepenuhnya offline).
-  final String aiKey;
-  final String aiModel;
 }
 
 class ConversionResult {
@@ -60,13 +53,6 @@ class ConverterService {
     final ocrPages = <OcrPage>[];
     final warnings = <String>[];
     final n = images.length;
-    var ai = options.aiKey.trim().isEmpty
-        ? null
-        : GeminiReader(
-            apiKey: options.aiKey.trim(),
-            model: options.aiModel.trim().isEmpty
-                ? GeminiReader.defaultModel
-                : options.aiModel.trim());
     for (var i = 0; i < n; i++) {
       onProgress?.call('Menganalisis struktur halaman ${i + 1}/$n', i / n);
       final analysis = await _analyze(images[i], workDir, i, options.cellOcr);
@@ -81,24 +67,8 @@ class ConverterService {
         mosA.add(await _safeOcr(analysis.mosaicA[m]));
         mosB.add(await _safeOcr(analysis.mosaicB[m]));
       }
-      final aiTexts = <Map<int, String>>[];
-      final reader = ai;
-      if (reader != null) {
-        for (var t = 0; t < analysis.tables.length; t++) {
-          onProgress?.call(
-              'Membaca tabel dengan AI Gemini (hal ${i + 1}/$n)', (i + 0.95) / n);
-          try {
-            aiTexts.add(await reader.readTable(analysis.imagePath, analysis.tables[t]));
-          } catch (e) {
-            aiTexts.add(const {});
-            warnings.add('AI Gemini tidak dipakai: $e');
-            ai = null; // jangan ulangi ke halaman berikutnya
-            break;
-          }
-        }
-      }
       ocrPages.add(page);
-      pages.add(AssemblyPage(analysis, page, mosA, mosB, aiTexts));
+      pages.add(AssemblyPage(analysis, page, mosA, mosB));
     }
     onProgress?.call('Memeriksa konsistensi isi tabel...', null);
     final content = await _assemble(pages, options.force, options.dictionary);

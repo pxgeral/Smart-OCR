@@ -143,10 +143,15 @@ abstract final class PageAnalyzer {
       if (quad != null && _needsRectify(quad, raster)) {
         final warped = _rectify(full, [for (final v in quad) v * scale]);
         if (warped != null) {
-          full = warped;
-          (raster, scale) = _work(full);
-          final again = TableStructureDetector(raster).detect();
-          if (again.isNotEmpty) detected = again;
+          final (r2, s2) = _work(warped);
+          final again = TableStructureDetector(r2).detect();
+          // pakai hasil pelurusan hanya bila strukturnya tidak memburuk
+          if (again.isNotEmpty && _score(again) >= _score(detected) * 0.95) {
+            full = warped;
+            raster = r2;
+            scale = s2;
+            detected = again;
+          }
         }
       }
     }
@@ -209,6 +214,10 @@ abstract final class PageAnalyzer {
     final (dx, dy) = t.corner(0, t.rowCount);
     return [ax, ay, bx, by, cx, cy, dx, dy];
   }
+
+  /// Mutu struktur: jumlah sel tunggal (bukan gabungan) di semua tabel.
+  static int _score(List<DetectedTable> ts) => ts.fold(
+      0, (n, t) => n + t.cells.where((c) => c.rowSpan == 1 && c.colSpan == 1).length);
 
   static bool _needsRectify(List<double> q, Raster r) {
     final unit = math.max(r.width, r.height) / 1600;
