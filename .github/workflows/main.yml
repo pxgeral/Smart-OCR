@@ -12,7 +12,7 @@ on:
       - '.github/workflows/main.yml'
 
 permissions:
-  contents: read
+  contents: write  # untuk menerbitkan APK di halaman Releases
 
 concurrency:
   group: build-apk-${{ github.ref }}
@@ -55,3 +55,17 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish APK to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          VER=${VER%%+*}
+          TAG="v${VER}-build${{ github.run_number }}"
+          APK="Smart-OCR-${VER}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "$APK"
+          gh release create "$TAG" "$APK" \
+            --title "Smart OCR ${VER} (build ${{ github.run_number }})" \
+            --notes "APK otomatis dari commit ${GITHUB_SHA::7}. Unduh lalu pasang di HP Android." \
+            --latest
