@@ -1,38 +1,85 @@
 # Smart OCR Converter
 
-Foto / scan / PDF -> Word (.docx), Excel (.xlsx), PDF searchable, TXT.
+Aplikasi Flutter untuk mengubah hasil scan, foto, dan PDF menjadi dokumen Word (`.docx`), Excel (`.xlsx`), PDF searchable, atau teks. OCR berjalan di perangkat menggunakan Google ML Kit. Aplikasi juga menyimpan riwayat konversi secara lokal.
 
-## Build APK
+## Fitur
 
-### A. GitHub Actions (tanpa install apa pun)
-1. Buat repo GitHub, unggah isi folder ini (termasuk `.github/`).
-2. Tab **Actions** -> **Build APK** -> **Run workflow**.
-3. Setelah hijau, unduh artifact **smart-ocr-converter-apk** (`app-release.apk`).
+- Memindai dokumen melalui kamera dengan deteksi tepi dan koreksi perspektif.
+- Memilih gambar dari galeri atau PDF untuk OCR.
+- Mengarahkan hasil tabel ke Excel dan dokumen biasa ke Word; format keluaran juga dapat dipilih di alur konversi.
+- Mengekspor PDF searchable, DOCX, XLSX, dan TXT.
+- Menyimpan riwayat, hasil terstruktur, dan gambar halaman agar bisa ditinjau & diekspor ulang.
 
-### B. Lokal
+### Baru di 1.2
+
+- **Pratinjau sebelum file dibuat**: hasil baca ditampilkan seperti tabel aslinya, bisa diperiksa/dikoreksi, baru kemudian disimpan sebagai Excel/Word/PDF/TXT.
+- **Foto miring/perspektif diluruskan otomatis** (homografi dari 4 pojok tabel), sehingga kolom tidak tertukar dan kata tidak "melompat" ke kolom tetangga.
+- **Kata yang melewati garis kolom dipecah** per sel memakai posisi karakter OCR.
+- Garis tipis/pudar dikenali dari konsistensi baris/kolom; deretan kotak centang tidak lagi dianggap garis kolom.
+- **Kotak centang** dikenali → ☑ / ☐.
+- Warna kertas foto (abu-abu/kebiruan) dinormalisasi agar warna sel sesuai aslinya.
+- Kolom **tanggal** (garis miring yang terbaca "1" diperbaiki: `0410312025` → `04/03/2025`) dan **desimal koma** (`5,10`) dikenali.
+- Baris kepala tabel tanpa warna dikenali dari label teks.
+- **AI Gemini (opsional)**: isi sel tabel juga dibaca Gemini (kunci API dari aistudio.google.com) lalu tetap dicek pola kolom & rumus. Tanpa kunci, aplikasi tetap 100% offline.
+
+### Baru di 1.1
+
+**Hasil menyerupai dokumen asli**
+
+- Deteksi struktur tabel bergaris: garis gelap, garis putih di kepala berwarna, dan tepi warna; tahan terhadap foto yang sedikit miring/perspektif.
+- Sel gabungan (rowspan/colspan) dikenali dan dipertahankan di Excel (`mergeCells`) dan Word (`gridSpan`/`vMerge`).
+- Warna latar sel, pita judul berwarna, warna tinta, perataan teks, tebal kepala tabel, ukuran huruf, lebar kolom dan tinggi baris proporsional.
+- Teks di luar tabel (judul, subjudul, tanda tangan) ditempatkan sesuai urutan halaman; orientasi halaman (potret/lanskap) dipertahankan.
+- Tanda air "Dipindai dengan CamScanner" dibuang. Paket DOCX/XLSX dikompres (DEFLATE).
+
+**Verifikasi tulisan tangan**
+
+- Setiap sel bertinta dipotong dan dibaca ulang (varian warna asli + varian kontras dinormalisasi) lewat mosaik, lalu dibandingkan dengan OCR halaman penuh.
+- Pola kolom dikenali otomatis (jam, desimal, bilangan bulat, teks) untuk memperbaiki salah baca umum (O→0, S→5, l→1, `0555`→`05.55`, dll.).
+- Pemeriksaan rentang nilai per kolom dan rumus antarkolom (mis. kolom "Rata-rata" = rata-rata kolom di kirinya); bila ada bacaan alternatif yang membuat rumus cocok, bacaan itu dipakai.
+- Ejaan kata yang berulang diseragamkan (mis. "Nesi" → "Nasi"), plus kamus kata dari Pengaturan.
+- Layar **Tinjau hasil**: sel kuning (perlu cek) / merah (wajib cek), ketuk untuk melihat potongan gambar asli, pilih bacaan lain atau ketik koreksi, lalu file dibuat ulang.
+- Excel mendapat lembar **Verifikasi** berisi daftar sel yang perlu dicek dengan tautan langsung.
+
+OCR berjalan lokal dengan model Latin Google ML Kit. Tulisan tangan yang sangat samar tetap bisa keliru, karena itu sel yang meragukan selalu ditandai untuk ditinjau.
+
+## Build APK lokal
+
+Persyaratan: Flutter stable yang memenuhi batas SDK di `pubspec.yaml`, JDK 21, dan Android SDK yang diterima melalui `flutter doctor --android-licenses`. Paket Android memakai `minSdk` 26.
+
 ```bash
-flutter create --platforms=android --org com.geral --project-name smart_ocr_converter .
-# ubah minSdk ke 26 di android/app/build.gradle(.kts)
+flutter doctor
 flutter pub get
-flutter build apk --release --no-shrink
-# hasil: build/app/outputs/flutter-apk/app-release.apk
+flutter analyze --no-fatal-infos
+flutter test
+flutter build apk --release
 ```
 
-## Struktur
-```
+APK release berada di `build/app/outputs/flutter-apk/app-release.apk`.
+
+## Build melalui GitHub Actions
+
+Workflow **Build APK** berjalan saat dipanggil manual dari tab **Actions** atau ketika kode aplikasi/build berubah di branch `main` atau `master`. Unduh artifact `smart-ocr-converter-apk` setelah workflow selesai.
+
+## Struktur sumber
+
+```text
 lib/
-  core/        constants, failure, result, format, zip_writer, xml_utils
-  models/      enums, ocr_result, table_data, converted_content, project_item, process_request
-  services/    providers (composition root), file_service, thumbnail_service
+  core/        konstanta, error, format, utilitas XML/ZIP
+  models/      model OCR, dokumen, proyek, dan permintaan proses
+  services/    dependency providers dan layanan berkas/thumbnail
   features/
-    scanner/   scanner_service (ML Kit), pdf_rasterizer, start_flow
-    ocr/       ocr_engine (interface), mlkit_ocr_engine, ocr_service (cache+fallback), settings_screen
-    converter/ layout_analyzer, table_detector, document_builder, converter_service, process_*
-    export/    docx_exporter, xlsx_exporter, pdf_exporter, export_service
-    history/   project_repository, projects_provider, history_screen
-  widgets/     source_tab
+    scanner/   kamera, PDF ke gambar, dan pemilihan sumber
+    ocr/       engine ML Kit, cache OCR, dan pengaturan
+    converter/ struktur tabel (table_structure), analisis halaman & mosaik
+               (page_analyzer), perakitan (page_assembler), verifikasi
+               tulisan tangan (cell_verifier), alur konversi
+    review/    layar tinjau & koreksi sel
+    export/    ekspor DOCX, XLSX, PDF searchable, dan TXT
+    history/   penyimpanan dan tampilan riwayat
+  widgets/     komponen UI bersama
 ```
 
 ## Menambah mesin OCR
-Implement `OcrEngine` (`features/ocr/ocr_engine.dart`), lalu daftarkan di
-`ocrServiceProvider` (`services/providers.dart`). Urutan list = prioritas + fallback.
+
+Implementasikan `OcrEngine` di `lib/features/ocr/ocr_engine.dart`, lalu daftarkan engine di `ocrServiceProvider` pada `lib/services/providers.dart`. Urutan daftar menentukan prioritas dan fallback.

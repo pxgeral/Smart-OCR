@@ -3,47 +3,55 @@ name: Build APK
 on:
   workflow_dispatch:
   push:
+    branches: [main, master]
     paths:
-      - smart_ocr_converter_full.zip
+      - 'lib/**'
+      - 'android/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/main.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
-      - name: Ekstrak proyek dari zip
-        working-directory: ${{ github.workspace }}
-        run: |
-          unzip -q -o smart_ocr_converter_full.zip
-          ls smart_ocr_converter
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '21'
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
+          cache-key: ${{ hashFiles('pubspec.lock') }}
 
-      - name: Siapkan proyek Android
-        working-directory: smart_ocr_converter
-        run: |
-          flutter create --platforms=android --org com.geral --project-name smart_ocr_converter .
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 26/; s/minSdkVersion flutter.minSdkVersion/minSdkVersion 26/' android/app/build.gradle*
-          sed -i 's/android:label="[^"]*"/android:label="Smart OCR Converter"/' android/app/src/main/AndroidManifest.xml
-
-      - name: Ambil dependensi
-        working-directory: smart_ocr_converter
+      - name: Resolve dependencies
         run: flutter pub get
 
-      - name: Build APK
-        working-directory: smart_ocr_converter
-        run: flutter build apk --release --no-shrink
+      - name: Analyze Dart sources
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Unit tests
+        run: flutter test
+        continue-on-error: true
+
+      - name: Build release APK
+        run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
         with:
           name: smart-ocr-converter-apk
-          path: smart_ocr_converter/build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
