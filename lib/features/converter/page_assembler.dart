@@ -149,6 +149,12 @@ abstract final class PageAssembler {
       for (var i = 0; i < boxes.length; i++)
         if (!used[i] && !_insideTable(boxes[i], tables)) boxes[i]
     ];
+    // coretan tanda tangan/paraf terbaca sebagai 1-2 huruf berukuran besar
+    if (free.length >= 4) {
+      final hs = free.map((b) => b.height).toList()..sort();
+      final med = hs[hs.length ~/ 2];
+      free.removeWhere((b) => b.height > med * 2.2 && b.text.trim().length <= 3);
+    }
     final freePage = OcrPage(
         index: p.ocr.index, width: p.ocr.width, height: p.ocr.height, boxes: free);
     if (tables.isEmpty && kind == DocumentKind.table) {
@@ -163,14 +169,65 @@ abstract final class PageAssembler {
             imagePath: a.imagePath);
       }
     }
-    final layout = LayoutAnalyzer.analyze(freePage, cellGap: double.infinity);
+    // Baris dengan beberapa kelompok teks berjauhan (formulir dua kolom,
+    // blok tanda tangan) disimpan per segmen beserta posisinya; baris
+    // tunggal digabung menjadi paragraf.
+    final layout = LayoutAnalyzer.analyze(freePage, cellGap: 2.2);
+    final single = <LayoutRow>[];
+    var lineId = 0;
+    for (final row in layout.rows) {
+      if (row.cells.length < 2) {
+        single.add(row);
+        continue;
+      }
+      final style = _bandStyle(row, a.bands);
+      final pt = (row.height * pxToPt / 1.25).clamp(6.0, 28.0).toDouble();
+      for (final cell in row.cells) {
+        elements.add(TextElement(DocBlock(
+          cell.text,
+          left: cell.left,
+          right: cell.right,
+          top: row.top,
+          bottom: row.bottom,
+          fontPt: pt,
+          bold: style?.fill != null,
+          fill: style?.fill,
+          fontColor: style?.color,
+          line: lineId,
+        )));
+      }
+      lineId++;
+    }
     elements.addAll(DocumentBuilder.build(
-      layout,
+      PageLayout(single, layout.lineHeight, layout.width),
       pxToPt: pxToPt,
       styleAt: (row) => _bandStyle(row, a.bands),
     ).map(TextElement.new));
 
-    elements.sort((x, y) => x.top.compareTo(y.top));
+    // ukuran huruf teks biasa diseragamkan (tinggi kotak OCR bervariasi);
+    // hanya judul yang jelas lebih besar yang dipertahankan
+    final pts = [
+      for (final e in elements)
+        if (e is TextElement && e.block.fontPt > 0) e.block.fontPt
+    ]..sort();
+    if (pts.length >= 3) {
+      final med = pts[pts.length ~/ 2];
+      for (var i = 0; i < elements.length; i++) {
+        final e = elements[i];
+        if (e is TextElement) {
+          final pt = e.block.fontPt;
+          final heading = e.block.type == BlockType.heading;
+          final hi = heading ? 1.45 : 2.2;
+          if (pt > 0 && pt >= med * 0.6 && pt <= med * hi && pt != med) {
+            elements[i] = TextElement(e.block.withFont(med));
+          }
+        }
+      }
+    }
+    elements.sort((x, y) {
+      final d = x.top.compareTo(y.top);
+      return d != 0 ? d : x.left.compareTo(y.left);
+    });
     return PageContent(
       width: a.width.toDouble(),
       height: a.height.toDouble(),
@@ -361,6 +418,12 @@ abstract final class PageAssembler {
         }
         final txt = sb.toString().trim();
         if (txt.isEmpty || l == null || r == null) continue;
+        // potongan 1 huruf (mis. "P" dari "Pek" yang menempel garis) bukan
+        // isi sel tetangga; hanya angka tunggal yang boleh dipecah
+        if (txt.length < 2 && !RegExp(r'^\d$').hasMatch(txt)) {
+          parts.clear();
+          break;
+        }
         parts.add(OcrBox(
             text: txt, left: l, top: b.top, right: r, bottom: b.bottom,
             confidence: b.confidence * 0.95));

@@ -57,7 +57,7 @@ class ConverterService {
       onProgress?.call('Menganalisis struktur halaman ${i + 1}/$n', i / n);
       final analysis = await _analyze(images[i], workDir, i, options.cellOcr);
       onProgress?.call('Membaca teks halaman ${i + 1}/$n', (i + 0.35) / n);
-      final page = await _ocr.recognizeUncached(analysis.imagePath, i);
+      final page = await _ocr.recognizeUncached(analysis.ocrPath, i);
       final mosA = <OcrPage>[], mosB = <OcrPage>[];
       final total = analysis.mosaicA.length;
       for (var m = 0; m < total; m++) {

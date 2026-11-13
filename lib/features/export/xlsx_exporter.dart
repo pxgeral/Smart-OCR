@@ -170,21 +170,41 @@ class _SheetBuilder {
     double? prevBottom;
     var frozen = 0;
     final singleTable = els.whereType<TableElement>().length == 1;
-    for (final e in els) {
+    var i = 0;
+    while (i < els.length) {
+      final e = els[i];
       final gapPx = prevBottom == null ? 0.0 : e.top - prevBottom;
       if (prevBottom != null && gapPx * pxToPt > 10) {
         _heights[cur] = math.min(40.0, math.max(8.0, gapPx * pxToPt * 0.6));
         cur++;
       }
       switch (e) {
+        case TextElement(:final block) when block.line >= 0:
+          // semua segmen satu baris visual -> satu baris Excel
+          final seg = <DocBlock>[block];
+          var bottom = block.bottom;
+          while (i + 1 < els.length) {
+            final n = els[i + 1];
+            if (n is TextElement && n.block.line == block.line) {
+              seg.add(n.block);
+              bottom = math.max(bottom, n.block.bottom);
+              i++;
+            } else {
+              break;
+            }
+          }
+          cur = _line(seg, cur, colCount, grid);
+          prevBottom = bottom;
         case TextElement(:final block):
           cur = _paragraph(block, cur, colCount, grid);
+          prevBottom = e.bottom;
         case TableElement(:final table):
           final start = cur;
           cur = _table(table, cur, grid);
           if (singleTable && table.headerRows > 0) frozen = start + table.headerRows - 1;
+          prevBottom = e.bottom;
       }
-      prevBottom = e.bottom;
+      i++;
     }
 
     final sb = StringBuffer('$xmlHeader<worksheet xmlns="${XlsxExporter._ns}" xmlns:r="${XlsxExporter._r}">');
@@ -251,6 +271,18 @@ class _SheetBuilder {
         out.add(p);
       }
     }
+    // posisi awal teks (segmen kiri/kanan, paragraf menjorok) menjadi kolom
+    // sendiri bila tidak dekat batas kolom tabel
+    final snap = page.width * 0.02;
+    final textLefts = [
+      for (final e in els)
+        if (e is TextElement) e.block.left
+    ]..sort();
+    for (final x in textLefts) {
+      if (out.any((p) => (p - x).abs() <= snap)) continue;
+      out.add(x);
+      out.sort();
+    }
     if (out.length < 2) return [left, right];
     return out;
   }
@@ -292,13 +324,66 @@ class _SheetBuilder {
     final lines = b.text.split('\n').fold<int>(
         0, (n, l) => n + math.max(1, (l.length * size * 0.5 / math.max(40.0, totalPt)).ceil()));
     _heights[row] = math.max(13.0, size * 1.35) * lines;
-    _put(row, 0, XlsxExporter._str('A$row', b.text, s));
-    if (colCount > 1) {
-      for (var j = 1; j < colCount; j++) {
+    // paragraf rata kiri mulai di kolom posisi aslinya; tengah/kanan/pita
+    // memakai lebar penuh
+    final c0 = b.align == BlockAlign.left && fill == null
+        ? math.min(_gi(grid, b.left), colCount - 1)
+        : 0;
+    final ref0 = XlsxExporter._col(c0);
+    _put(row, c0, XlsxExporter._str('$ref0$row', b.text, s));
+    if (colCount - 1 > c0) {
+      for (var j = c0 + 1; j < colCount; j++) {
         _put(row, j, '<c r="${XlsxExporter._col(j)}$row" s="$s"/>');
       }
-      _merges.add('A$row:${XlsxExporter._col(colCount - 1)}$row');
+      _merges.add('$ref0$row:${XlsxExporter._col(colCount - 1)}$row');
     }
+    return row + 1;
+  }
+
+  /// Satu baris visual dengan beberapa segmen teks pada posisi aslinya.
+  int _line(List<DocBlock> seg, int row, int colCount, List<double> grid) {
+    seg.sort((a, b) => a.left.compareTo(b.left));
+    var maxPt = 0.0;
+    final starts = <int>[];
+    for (final b in seg) {
+      var c = math.min(_gi(grid, b.left), colCount - 1);
+      if (starts.isNotEmpty && c <= starts.last) c = math.min(starts.last + 1, colCount - 1);
+      starts.add(c);
+    }
+    for (var k = 0; k < seg.length; k++) {
+      final b = seg[k];
+      final c0 = starts[k];
+      if (k > 0 && c0 <= starts[k - 1]) {
+        // kolom habis: gabungkan ke segmen sebelumnya
+        continue;
+      }
+      final size = (b.fontPt > 0 ? b.fontPt : 11.0) * zoom;
+      maxPt = math.max(maxPt, size);
+      final fill = opt.keepColors ? b.fill : null;
+      final st = this.st.xf(
+        bold: b.bold,
+        size: size,
+        color: opt.keepColors ? b.fontColor : null,
+        fill: fill,
+        h: 'left',
+        v: 'center',
+      );
+      var text = b.text;
+      // segmen yang tidak kebagian kolom ikut ditulis di sel ini
+      for (var j = k + 1; j < seg.length && starts[j] <= c0; j++) {
+        text = '$text   ${seg[j].text}';
+      }
+      final c1 = k + 1 < seg.length
+          ? math.max(c0, (starts.skip(k + 1).firstWhere((x) => x > c0, orElse: () => colCount)) - 1)
+          : colCount - 1;
+      final ref0 = '${XlsxExporter._col(c0)}$row';
+      _put(row, c0, XlsxExporter._str(ref0, text, st));
+      for (var j = c0 + 1; j <= c1; j++) {
+        _put(row, j, '<c r="${XlsxExporter._col(j)}$row" s="$st"/>');
+      }
+      if (c1 > c0) _merges.add('$ref0:${XlsxExporter._col(c1)}$row');
+    }
+    _heights[row] = math.max(13.0, maxPt * 1.4);
     return row + 1;
   }
 

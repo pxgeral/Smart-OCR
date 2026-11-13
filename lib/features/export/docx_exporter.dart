@@ -74,10 +74,27 @@ abstract final class DocxExporter {
     final tw = textW / math.max(1.0, right - left); // twips per px
     final pxToPt = (p.landscape ? 842.0 : 595.0) / math.max(1.0, p.width);
     double? prevBottom;
-    for (final e in els) {
+    for (var i = 0; i < els.length; i++) {
+      final e = els[i];
       final gap = prevBottom == null ? 0.0 : math.max(0.0, e.top - prevBottom);
       final before = math.min(720, (gap * tw * 0.6).round());
       switch (e) {
+        case TextElement(:final block) when block.line >= 0:
+          final seg = <DocBlock>[block];
+          var bottom = block.bottom;
+          while (i + 1 < els.length) {
+            final n = els[i + 1];
+            if (n is TextElement && n.block.line == block.line) {
+              seg.add(n.block);
+              bottom = math.max(bottom, n.block.bottom);
+              i++;
+            } else {
+              break;
+            }
+          }
+          out.write(_line(seg, before, left, tw, textW, opt));
+          prevBottom = bottom;
+          continue;
         case TextElement(:final block):
           out.write(_paragraph(block, before, left, tw, textW, opt));
         case TableElement(:final table):
@@ -90,6 +107,36 @@ abstract final class DocxExporter {
       }
       prevBottom = e.bottom;
     }
+  }
+
+  /// Satu baris dengan beberapa segmen: tab stop di posisi asli tiap segmen.
+  static String _line(List<DocBlock> seg, int before, double left, double tw,
+      int textW, ExportOptions opt) {
+    seg.sort((a, b) => a.left.compareTo(b.left));
+    final pos = [
+      for (final b in seg) ((b.left - left) * tw).round().clamp(0, textW - 200)
+    ];
+    final ppr = StringBuffer();
+    if (pos.length > 1) {
+      ppr.write('<w:tabs>');
+      for (var k = 1; k < pos.length; k++) {
+        ppr.write('<w:tab w:val="left" w:pos="${pos[k]}"/>');
+      }
+      ppr.write('</w:tabs>');
+    }
+    ppr.write('<w:spacing w:before="$before" w:after="0"/>');
+    if (pos.first > 0) ppr.write('<w:ind w:left="${pos.first}"/>');
+    final runs = StringBuffer();
+    for (var k = 0; k < seg.length; k++) {
+      final b = seg[k];
+      if (k > 0) runs.write('<w:r><w:tab/></w:r>');
+      runs.write(_runs(b.text.replaceAll('\n', ' '), _runProps(
+        bold: b.bold,
+        pt: b.fontPt,
+        color: opt.keepColors ? b.fontColor : null,
+      )));
+    }
+    return '<w:p><w:pPr>$ppr</w:pPr>$runs</w:p>';
   }
 
   static String _runProps({bool bold = false, double pt = 0, int? color}) {

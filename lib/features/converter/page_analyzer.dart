@@ -80,9 +80,14 @@ class PageAnalysis {
     required this.slots,
     required this.mosaicA,
     required this.mosaicB,
-  });
+    String? ocrPath,
+  }) : ocrPath = ocrPath ?? imagePath;
 
   final String imagePath; // gambar ternormalisasi (orientasi benar, JPEG)
+
+  /// Gambar khusus untuk OCR halaman: bayangan & warna kertas diratakan
+  /// (sama ukuran dengan [imagePath], koordinat identik).
+  final String ocrPath;
   final int width, height;
   final List<TableInfo> tables;
   final List<BandInfo> bands;
@@ -157,6 +162,7 @@ abstract final class PageAnalyzer {
     }
     File(normPath).writeAsBytesSync(
         img.encodeJpg(full, quality: AppConstants.jpegQuality));
+    final ocrPath = _enhanceForOcr(full, '$workDir/ocr_${pageIndex + 1}.jpg') ?? normPath;
 
     final tables = <TableInfo>[
       for (final t in detected) _toInfo(t, raster, scale),
@@ -171,6 +177,7 @@ abstract final class PageAnalyzer {
     }
     return PageAnalysis(
       imagePath: normPath,
+      ocrPath: ocrPath,
       width: full.width,
       height: full.height,
       tables: tables,
@@ -179,6 +186,59 @@ abstract final class PageAnalyzer {
       mosaicA: mosaicA,
       mosaicB: mosaicB,
     );
+  }
+
+  /// Foto kertas abu-abu/berbayang: latar diratakan jadi putih dan teks
+  /// dipertegas agar OCR lebih teliti. Null bila halaman sudah bersih.
+  static String? _enhanceForOcr(img.Image full, String outPath) {
+    final w = full.width, h = full.height;
+    final rgb = full.getBytes(order: img.ChannelOrder.rgb);
+    final l = Uint8List(w * h);
+    for (var i = 0, j = 0; i < l.length; i++, j += 3) {
+      l[i] = (rgb[j] * 299 + rgb[j + 1] * 587 + rgb[j + 2] * 114) ~/ 1000;
+    }
+    const bs = 32;
+    final bw = (w + bs - 1) ~/ bs, bh = (h + bs - 1) ~/ bs;
+    final bg = Uint8List(bw * bh);
+    for (var y = 0; y < h; y++) {
+      final by = y ~/ bs;
+      for (var x = 0; x < w; x++) {
+        final k = by * bw + x ~/ bs;
+        if (l[y * w + x] > bg[k]) bg[k] = l[y * w + x];
+      }
+    }
+    // perlu diratakan? (kertas gelap atau tidak rata)
+    final sorted = [...bg]..sort();
+    final p50 = sorted[sorted.length ~/ 2], p10 = sorted[sorted.length ~/ 10];
+    if (p50 >= 238 && p50 - p10 < 18) return null;
+    final bg3 = Uint8List(bw * bh);
+    for (var by = 0; by < bh; by++) {
+      for (var bx = 0; bx < bw; bx++) {
+        var m = 0;
+        for (var dy = -1; dy <= 1; dy++) {
+          for (var dx = -1; dx <= 1; dx++) {
+            final nx = bx + dx, ny = by + dy;
+            if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue;
+            final v = bg[ny * bw + nx];
+            if (v > m) m = v;
+          }
+        }
+        bg3[by * bw + bx] = m;
+      }
+    }
+    final out = Uint8List(w * h);
+    for (var y = 0; y < h; y++) {
+      final by = y ~/ bs;
+      for (var x = 0; x < w; x++) {
+        final m = bg3[by * bw + x ~/ bs];
+        final i = y * w + x;
+        final v = m <= 0 ? 255 : math.min(255, l[i] * 255 ~/ m);
+        out[i] = ((v - 110) * 255 ~/ 130).clamp(0, 255);
+      }
+    }
+    final g = img.Image.fromBytes(width: w, height: h, bytes: out.buffer, numChannels: 1);
+    File(outPath).writeAsBytesSync(img.encodeJpg(g, quality: 92));
+    return outPath;
   }
 
   static (Raster, double) _work(img.Image full) {
@@ -350,7 +410,7 @@ abstract final class PageAnalyzer {
       if (inks[i].checkbox > 0) colBoxes[c.col] = (colBoxes[c.col] ?? 0) + 1;
     }
     bool boxCol(int col) =>
-        (colBoxes[col] ?? 0) >= 3 && (colBoxes[col] ?? 0) >= (colCells[col] ?? 1) * 0.5;
+        (colBoxes[col] ?? 0) >= 3 && (colBoxes[col] ?? 0) >= (colCells[col] ?? 1) * 0.6;
     // baris pertama-terakhir yang berisi kotak, per kolom
     final boxRows = <int, (int, int)>{};
     for (var i = 0; i < t.cells.length; i++) {
@@ -506,7 +566,8 @@ abstract final class PageAnalyzer {
     final bw = x1 - x0 + 1, bh = y1 - y0 + 1;
     if (bw < 6 || bh < 6) return 0;
     final ratio = bw / bh;
-    if (ratio < 0.7 || ratio > 1.4 || bh < cellH * 0.3 || bh > cellH * 0.95) return 0;
+    // kotak centang praktis bujur sangkar (angka/huruf lebih tinggi daripada lebar)
+    if (ratio < 0.82 || ratio > 1.22 || bh < cellH * 0.3 || bh > cellH * 0.95) return 0;
     final l = r.lum;
     final thr = math.min(225, bgL - 25);
     bool on(int x, int y) =>
@@ -722,22 +783,77 @@ abstract final class PageAnalyzer {
   /// Potong isi sel (tanpa garis tepi), hapus sisa garis, perbesar.
   static img.Image? _cropCell(img.Image full, CellInfo c) {
     final w = c.box[2] - c.box[0], h = c.box[3] - c.box[1];
-    final ix = math.max(3.0, w * 0.03), iy = math.max(3.0, h * 0.07);
+    // inset kecil: teks sering menempel garis kiri sel (huruf pertama
+    // jangan sampai terpotong)
+    final ix = math.max(3.0, math.min(w * 0.03, h * 0.12));
+    final iy = math.max(3.0, h * 0.07);
     final x0 = (c.box[0] + ix).round().clamp(0, full.width - 1);
     final y0 = (c.box[1] + iy).round().clamp(0, full.height - 1);
     final x1 = (c.box[2] - ix).round().clamp(0, full.width);
     final y1 = (c.box[3] - iy).round().clamp(0, full.height);
     if (x1 - x0 < 6 || y1 - y0 < 6) return null;
-    final crop = img.copyCrop(full, x: x0, y: y0, width: x1 - x0, height: y1 - y0);
+    var crop = img.copyCrop(full, x: x0, y: y0, width: x1 - x0, height: y1 - y0);
     _eraseBorderLines(crop);
+    // sel lebar: ambil hanya rentang yang bertinta supaya tulisan tidak
+    // ikut mengecil saat potongan diperkecil
+    final span = _inkSpan(crop);
+    if (span != null) {
+      final pad = (crop.height * 0.6).round();
+      final a = math.max(0, span.$1 - pad), b = math.min(crop.width, span.$2 + pad + 1);
+      if (b - a < crop.width * 0.9) {
+        crop = img.copyCrop(crop, x: a, y: 0, width: b - a, height: crop.height);
+      }
+    }
     final ch = crop.height.toDouble();
     var s = (80 / ch).clamp(1.0, 3.0);
-    if (crop.width * s > 1000) s = math.max(0.5, 1000 / crop.width);
+    if (crop.width * s > 1400) s = math.max(0.6, 1400 / crop.width);
     if ((s - 1).abs() < 0.05) return crop;
     return img.copyResize(crop,
         width: (crop.width * s).round(),
         height: (crop.height * s).round(),
         interpolation: img.Interpolation.cubic);
+  }
+
+  /// Kolom piksel pertama & terakhir yang berisi tinta (relatif latar potongan).
+  static (int, int)? _inkSpan(img.Image im) {
+    final w = im.width, h = im.height;
+    final rgb = im.getBytes(order: img.ChannelOrder.rgb);
+    final hist = List<int>.filled(256, 0);
+    final l = Uint8List(w * h);
+    for (var i = 0, j = 0; i < l.length; i++, j += 3) {
+      final v = (rgb[j] * 299 + rgb[j + 1] * 587 + rgb[j + 2] * 114) ~/ 1000;
+      l[i] = v;
+      hist[v]++;
+    }
+    // baris/kolom yang sudah diputihkan (sisa garis) tidak ikut dihitung
+    var total = 0;
+    for (var v = 0; v < 250; v++) {
+      total += hist[v];
+    }
+    var acc = 0, bg = 255;
+    if (total > 0) {
+      for (var v = 0; v < 250; v++) {
+        acc += hist[v];
+        if (acc >= total * 0.7) {
+          bg = v;
+          break;
+        }
+      }
+    }
+    final thr = bg - 55;
+    var first = -1, last = -1;
+    final edge = math.max(2, (w * 0.03).round());
+    for (var x = edge; x < w - edge; x++) {
+      var n = 0;
+      for (var y = 0; y < h; y++) {
+        if (l[y * w + x] < thr) n++;
+      }
+      if (n >= math.max(2, h * 0.1) && n < h * 0.85) {
+        if (first < 0) first = x;
+        last = x;
+      }
+    }
+    return first < 0 ? null : (first, last);
   }
 
   static void _eraseBorderLines(img.Image im) {

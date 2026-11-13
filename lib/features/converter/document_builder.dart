@@ -86,7 +86,7 @@ abstract final class DocumentBuilder {
               : BlockAlign.left;
 
       final style = styleAt?.call(r);
-      final isHeading = r.height > h * 1.35 ||
+      final isHeading = r.height > h * 1.6 ||
           (centered &&
               text.length <= 100 &&
               text == text.toUpperCase() &&

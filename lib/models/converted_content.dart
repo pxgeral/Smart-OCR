@@ -19,9 +19,14 @@ class DocBlock {
     this.left = 0,
     this.right = 0,
     this.bottom = 0,
+    this.line = -1,
   });
 
   String text;
+
+  /// Blok dengan nomor [line] yang sama berada pada satu baris visual
+  /// (mis. "Nama  Wandy" di kiri dan "Nama  Abdul" di kanan); -1 = paragraf biasa.
+  final int line;
   final BlockType type;
   final int level;
   final BlockAlign align;
@@ -35,6 +40,20 @@ class DocBlock {
   /// Posisi pada gambar sumber (px).
   final double top, left, right, bottom;
 
+  DocBlock withFont(double pt) => DocBlock(text,
+      type: type,
+      level: level,
+      align: align,
+      fontPt: pt,
+      bold: bold,
+      fill: fill,
+      fontColor: fontColor,
+      top: top,
+      left: left,
+      right: right,
+      bottom: bottom,
+      line: line);
+
   Map<String, dynamic> toMap() => {
         't': text,
         'ty': type.index,
@@ -45,6 +64,7 @@ class DocBlock {
         if (fill != null) 'f': fill,
         if (fontColor != null) 'fc': fontColor,
         'bx': [left, top, right, bottom],
+        if (line >= 0) 'ln': line,
       };
 
   factory DocBlock.fromMap(Map<String, dynamic> m) {
@@ -65,6 +85,7 @@ class DocBlock {
       top: bx[1],
       right: bx[2],
       bottom: bx[3],
+      line: m['ln'] as int? ?? -1,
     );
   }
 }

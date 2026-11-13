@@ -5,6 +5,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:smart_ocr_converter/features/converter/page_analyzer.dart';
 import 'package:smart_ocr_converter/features/converter/page_assembler.dart';
 import 'package:smart_ocr_converter/features/export/docx_exporter.dart';
@@ -13,7 +14,12 @@ import 'package:smart_ocr_converter/models/ocr_result.dart';
 import 'package:smart_ocr_converter/models/table_data.dart';
 
 OcrPage _tesseract(String path, int index, {String psm = '3'}) {
-  final r = Process.runSync('tesseract', [path, 'stdout', '--psm', psm, 'tsv']);
+  // kontras dinormalisasi (Tesseract lemah pada foto kertas abu-abu)
+  final src = img.decodeImage(File(path).readAsBytesSync())!;
+  final g = img.normalize(img.grayscale(src), min: 0, max: 255);
+  final tmp = '${Directory.systemTemp.path}/tess_${path.hashCode}.png';
+  File(tmp).writeAsBytesSync(img.encodePng(g, level: 1));
+  final r = Process.runSync('tesseract', [tmp, 'stdout', '--psm', psm, 'tsv']);
   final boxes = <OcrBox>[];
   for (final line in (r.stdout as String).split('\n').skip(1)) {
     final f = line.split('\t');
@@ -46,7 +52,7 @@ void main() {
       final a = PageAnalyzer.analyze(
           sourcePath: files[i], workDir: work.path, pageIndex: i, detectTables: true, cellOcr: true);
       final tAnalyze = sw.elapsedMilliseconds;
-      final ocr = _tesseract(a.imagePath, i);
+      final ocr = _tesseract(a.ocrPath, i, psm: Platform.environment['PSM'] ?? '3');
       final ma = [for (final m in a.mosaicA) _tesseract(m, 0, psm: '11')];
       final mb = [for (final m in a.mosaicB) _tesseract(m, 0, psm: '11')];
       pages.add(AssemblyPage(a, ocr, ma, mb));
