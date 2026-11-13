@@ -35,7 +35,10 @@ class SpmUnigram {
         case 1:
           pos += 8;
         case 2:
-          pos += varint();
+          // jangan ditulis `pos += varint()`: Dart membaca `pos` lebih dulu
+          // sebelum varint() menggesernya, sehingga satu byte panjang terlewat.
+          final len = varint();
+          pos += len;
         case 5:
           pos += 4;
         default:
