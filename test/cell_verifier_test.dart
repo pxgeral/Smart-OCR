@@ -132,6 +132,29 @@ void main() {
     expect(_cell(vt, 1, 2).status, CellStatus.ok);
   });
 
+  test('mode "seperti aslinya" tidak mengoreksi isi sel, mode ubah mengoreksi', () {
+    List<List<List<String>>> body() => [
+          [['Nasi'], ['09.30'], ['98.6'], ['96.5'], ['93.5'], ['96.2']],
+          [['Nasi'], ['05.30'], ['91.7'], ['92.5'], ['94.6'], ['92.93']],
+          [['Nesi'], ['O5.4O'], ['92.6'], ['88.7'], ['90.4'], ['90.57']],
+          [['Sayur'], ['0555'], ['92.7'], ['93.6'], ['91.5'], ['9S.1']],
+        ];
+
+    final asli = _table(body());
+    CellVerifier.verify([asli], keepOriginal: true);
+    expect(_cell(asli, 3, 0).text, 'Nesi');
+    expect(_cell(asli, 3, 1).text, 'O5.4O');
+    expect(_cell(asli, 4, 1).text, '0555');
+    expect(_cell(asli, 4, 5).text, '9S.1');
+    expect(asli.table.cells.every((c) => !c.numeric), isTrue);
+
+    final ubah = _table(body());
+    CellVerifier.verify([ubah]);
+    expect(_cell(ubah, 3, 0).text, 'Nasi');
+    expect(_cell(ubah, 3, 1).text, '05.40');
+    expect(_cell(ubah, 4, 1).text, '05.55');
+  });
+
   test('levenshtein', () {
     expect(CellVerifier.levenshtein('nasi', 'nesi'), 1);
     expect(CellVerifier.levenshtein('tempe', 'tempe'), 0);

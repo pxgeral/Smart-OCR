@@ -69,15 +69,21 @@ abstract final class CellVerifier {
     'Agustus', 'September', 'Oktober', 'November', 'Desember',
   ];
 
-  static void verify(List<VerifyTable> tables, {List<String> dictionary = const []}) {
+  /// [keepOriginal] = mode "seperti aslinya": isi sel dipakai persis seperti
+  /// terbaca (tanpa koreksi pola kolom, rumus, atau ejaan). Sel yang
+  /// meragukan tetap ditandai agar bisa dicek.
+  static void verify(List<VerifyTable> tables,
+      {List<String> dictionary = const [], bool keepOriginal = false}) {
     final profiles = <VerifyTable, List<ColumnProfile>>{};
     for (final vt in tables) {
       final p = _profiles(vt);
       profiles[vt] = p;
-      _choose(vt, p);
+      _choose(vt, p, keepOriginal: keepOriginal);
+      if (keepOriginal) continue;
       _rangeCheck(vt, p);
       _relations(vt, p);
     }
+    if (keepOriginal) return;
     _vocabulary(tables, profiles, [...builtInWords, ...dictionary]);
   }
 
@@ -336,7 +342,52 @@ abstract final class CellVerifier {
 
   // ------------------------------------------------------------ choose
 
-  static void _choose(VerifyTable vt, List<ColumnProfile> profiles) {
+  /// Mode "seperti aslinya": pilih bacaan OCR terbaik (keyakinan + kesepakatan
+  /// antar varian) lalu pakai apa adanya, tanpa perbaikan pola kolom.
+  static void _pickOriginal(TableCell cell, List<OcrCandidate> cands) {
+    var bestI = 0;
+    var bestScore = double.negativeInfinity;
+    for (var i = 0; i < cands.length; i++) {
+      final t = clean(cands[i].text);
+      var agree = 0;
+      for (var j = 0; j < cands.length; j++) {
+        if (j != i && _same(clean(cands[j].text), t)) agree++;
+      }
+      final bias = switch (cands[i].source) {
+        'crop' => 0.06,
+        'norm' => 0.03,
+        _ => 0.0,
+      };
+      final score = cands[i].confidence + 0.35 * agree + bias;
+      if (score > bestScore) {
+        bestScore = score;
+        bestI = i;
+      }
+    }
+    final text = clean(cands[bestI].text);
+    var agree = 0;
+    for (var j = 0; j < cands.length; j++) {
+      if (j != bestI && _same(clean(cands[j].text), text)) agree++;
+    }
+    final distinct = <String>{for (final c in cands) clean(c.text)};
+    cell.text = text;
+    cell.alternatives = [for (final d in distinct) if (d != text) d];
+    cell.confidence = cands[bestI].confidence;
+    cell.numeric = false; // tulis persis seperti terbaca, bukan sebagai angka
+    if (agree == 0 && distinct.length > 1) {
+      cell.status = CellStatus.check;
+      cell.note = 'Hasil baca berbeda: ${distinct.take(3).join(' / ')}';
+    } else if (cands[bestI].confidence < 0.55 && agree == 0) {
+      cell.status = CellStatus.check;
+      cell.note = 'Keyakinan OCR rendah';
+    } else {
+      cell.status = CellStatus.ok;
+      cell.note = '';
+    }
+  }
+
+  static void _choose(VerifyTable vt, List<ColumnProfile> profiles,
+      {bool keepOriginal = false}) {
     final t = vt.table;
     for (final cell in t.cells) {
       final cands = [
@@ -378,6 +429,10 @@ abstract final class CellVerifier {
         cell.text = clean(pick.text);
         cell.status = CellStatus.ok;
         cell.confidence = pick.confidence;
+        continue;
+      }
+      if (keepOriginal) {
+        _pickOriginal(cell, cands);
         continue;
       }
       final prof = _profileFor(profiles, cell);
