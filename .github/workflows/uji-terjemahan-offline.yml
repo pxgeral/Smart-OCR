@@ -1,0 +1,68 @@
+name: Uji Terjemahan Offline
+
+# Mengunduh model OPUS-MT, menjalankan implementasi acuan Python, lalu
+# menjalankan mesin Dart (ONNX Runtime 1.15.1 Linux, versi yang sama dengan
+# yang dibundel pustaka Android) dan membandingkan hasilnya. Hanya pemeriksaan.
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'lib/features/translate/**'
+      - 'test/offline_mt_test.dart'
+      - 'tool/ambil_model.sh'
+      - 'tool/ref_terjemah.py'
+      - 'pubspec.yaml'
+      - '.github/workflows/uji-terjemahan-offline.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uji-terjemahan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  uji:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+          cache-key: ${{ hashFiles('pubspec.lock') }}
+
+      - name: Cache model
+        uses: actions/cache@v4
+        with:
+          path: assets/models
+          key: model-opus-mt-${{ hashFiles('tool/ambil_model.sh') }}
+
+      - name: Unduh model
+        run: bash tool/ambil_model.sh
+
+      - name: Pasang pustaka Python
+        run: python3 -m pip install --quiet onnxruntime sentencepiece numpy
+
+      - name: Terjemahan acuan (Python)
+        run: python3 tool/ref_terjemah.py assets/models ref.json
+
+      - run: flutter pub get
+
+      - name: Uji mesin Dart vs acuan
+        run: |
+          LIB=$(find "$HOME/.pub-cache/hosted/pub.dev" -path '*onnxruntime-*/linux/libonnxruntime.so.*' | head -1)
+          echo "ORT: $LIB"
+          mkdir -p ortlib && ln -sf "$LIB" "ortlib/$(basename "$LIB")" && ln -sf "$LIB" ortlib/libonnxruntime.so
+          LD_LIBRARY_PATH="$PWD/ortlib" MODELS_DIR="$PWD/assets/models" REF_JSON="$PWD/ref.json" \
+            flutter test test/offline_mt_test.dart --reporter expanded
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acuan-terjemahan
+          path: ref.json
+          retention-days: 7

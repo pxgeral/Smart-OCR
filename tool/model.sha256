@@ -1,0 +1,8 @@
+d46dea5d13bec5ed7552baa5c0917e0d3dfa32e14fb7f09eae534c50d0cfb42f  assets/models/en-id/decoder.onnx
+9bfc9cf0f400f86ec11da24b2f56380fcfabab17fb2dbcf7bb4c1754b7076e24  assets/models/en-id/encoder.onnx
+e72a8b1062477950b6464b1fcfb37a99c196618e5bb67222451472ea52e98090  assets/models/id-en/decoder.onnx
+c5ab889ecf81e120e53f0f39800c0609d8d77b6c4a32212d73a85e3cfeb66293  assets/models/id-en/encoder.onnx
+cda834905a5d478c54a73abc98cc9155dc58217baa130cdf165411265b760d6b  assets/models/en-id/vocab.json
+cda834905a5d478c54a73abc98cc9155dc58217baa130cdf165411265b760d6b  assets/models/id-en/vocab.json
+e88300911c2c573ec5526777a1e84bae698d20925b82dcef9c7248bb0e537ed0  assets/models/en-id/source.spm
+2a8fefe71c7f26cb0c6aa1b9f0cc0f8d18006b20fe41c547af7f25b9c8333465  assets/models/id-en/source.spm

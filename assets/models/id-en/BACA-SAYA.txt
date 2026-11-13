@@ -1,0 +1,4 @@
+Folder ini diisi oleh tool/ambil_model.sh saat CI membangun APK:
+encoder.onnx, decoder.onnx, vocab.json, source.spm (model OPUS-MT, ONNX int8).
+Berkas model tidak disimpan di git. Tanpa berkas itu aplikasi tetap berjalan;
+terjemahan Indonesia<->Inggris kembali memakai Google ML Kit (perlu unduhan).

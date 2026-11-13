@@ -10,6 +10,12 @@ Aplikasi Flutter untuk mengubah hasil scan, foto, dan PDF menjadi dokumen Word (
 - Mengekspor PDF searchable, DOCX, XLSX, dan TXT.
 - Menyimpan riwayat, hasil terstruktur, dan gambar halaman agar bisa ditinjau & diekspor ulang.
 
+### Baru di 1.6
+
+- **Terjemahan Indonesia↔Inggris offline, tanpa unduhan.** Model terjemahan (OPUS-MT oleh Helsinki-NLP, Apache-2.0; versi ONNX int8 oleh Xenova) ikut terkemas di dalam APK dan dijalankan lewat ONNX Runtime di HP, di proses terpisah supaya layar tidak membeku. Model diunduh **CI saat membangun APK** (`tool/ambil_model.sh`, dikunci dengan `tool/model.sha256`), tidak disimpan di git. Bahasa lain tetap memakai Google ML Kit (model ±30 MB diunduh sekali).
+- Konsekuensi: APK jauh lebih besar (±200 MB lebih). Model int8 yang kecil cukup baik untuk kalimat umum, tetapi bisa keliru pada istilah teknis (misalnya "concrete" menjadi "tambahan"); periksa hasilnya, terutama dokumen teknik.
+- Uji CI: mesin Dart dibandingkan dengan implementasi acuan Python memakai model asli (`tool/ref_terjemah.py`, `test/offline_mt_test.dart`).
+
 ### Baru di 1.5.1
 
 - **Perbaikan terjemahan**: unduhan model bahasa tidak lagi bisa macet tanpa akhir. Ada pemeriksaan internet di awal, waktu berjalan yang terlihat, batas waktu 5 menit dengan pesan yang jelas, dan tombol **Batal** (serta tombol kembali) yang berfungsi selama unduhan. Model yang sudah selesai terunduh langsung dikenali.

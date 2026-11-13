@@ -1,6 +1,6 @@
 abstract final class AppConstants {
   static const appName = 'Smart OCR Converter';
-  static const version = '1.5.1';
+  static const version = '1.6.0';
 
   // Hive boxes
   static const projectsBox = 'projects';
