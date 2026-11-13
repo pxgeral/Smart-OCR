@@ -24,4 +24,6 @@ for d in id-en en-id; do
   get "$repo/vocab.json" "$out/vocab.json" 500000
   get "$repo/source.spm" "$out/source.spm" 300000
 done
-echo "== ringkasan"; ls -la assets/models/*/ ; sha256sum assets/models/*/*.onnx assets/models/*/vocab.json assets/models/*/source.spm
+echo "== ringkasan"; ls -la assets/models/*/
+# kunci isi model: gagal bila berkas di sumber berubah atau rusak
+sha256sum -c tool/model.sha256
