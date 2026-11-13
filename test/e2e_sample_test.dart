@@ -2,6 +2,9 @@
 // pengganti ML Kit (yang hanya berjalan di perangkat Android).
 //
 //   SAMPLE_DIR=/path/berisi/jpg OUT_DIR=/tmp/out flutter test test/e2e_sample_test.dart
+//
+// Opsional: MODE=asli (isi persis seperti terbaca, tanpa koreksi otomatis),
+// DICT=Nasi,Ayam (kamus kata untuk mode ubah).
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -61,7 +64,12 @@ void main() {
         for (final t in a.tables) '${t.rowHeights.length}x${t.colWidths.length}/${t.cells.length}'
       ]}, pita ${a.bands.length}, mosaik ${a.mosaicA.length}');
     }
-    final content = PageAssembler.assemble(pages, dictionary: const ['Nasi', 'Ayam', 'Tempe', 'Sayur', 'Bubur', 'Telur']);
+    final dict = [
+      for (final w in (Platform.environment['DICT'] ?? '').split(','))
+        if (w.trim().isNotEmpty) w.trim()
+    ];
+    final content = PageAssembler.assemble(pages,
+        dictionary: dict, keepOriginal: Platform.environment['MODE'] == 'asli');
     File('$out/hasil.xlsx').writeAsBytesSync(XlsxExporter.build(content));
     File('$out/hasil.docx').writeAsBytesSync(DocxExporter.build(content));
     File('$out/hasil.txt').writeAsStringSync(content.plainText);

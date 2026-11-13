@@ -1,0 +1,90 @@
+name: Uji Dokumen Contoh
+
+# Mengunduh beberapa PDF publik, mengubahnya menjadi gambar (seperti hasil scan),
+# menjalankan alur konversi aplikasi (OCR Tesseract sebagai pengganti ML Kit)
+# pada kedua mode, lalu membandingkan teks hasil dengan teks asli PDF.
+# Hanya pemeriksaan; tidak menerbitkan apa pun.
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'lib/**'
+      - 'test/e2e_sample_test.dart'
+      - 'tool/uji_dokumen.py'
+      - '.github/workflows/uji-dokumen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uji-dokumen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  uji:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+          cache-key: ${{ hashFiles('pubspec.lock') }}
+
+      - name: Pasang Tesseract, Poppler, pustaka Python
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr poppler-utils
+          python3 -m pip install --quiet python-docx openpyxl
+
+      - run: flutter pub get
+
+      - name: Unduh dokumen contoh
+        run: |
+          mkdir -p dokumen truth
+          get() { curl -fsSL --retry 3 --max-time 60 -o "dokumen/$1.pdf" "$2" && echo "ok  $1" || { echo "gagal  $1"; rm -f "dokumen/$1.pdf"; }; }
+          get makalah-dua-kolom https://raw.githubusercontent.com/mozilla/pdf.js/master/test/pdfs/tracemonkey.pdf
+          get formulir-w9        https://www.irs.gov/pub/irs-pdf/fw9.pdf
+          get surat-pendek       https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf
+          get tabel-w3c          https://www.w3.org/WAI/WCAG21/working-examples/pdf-table/table.pdf
+          ls -la dokumen
+          test "$(ls dokumen/*.pdf 2>/dev/null | wc -l)" -ge 1
+
+      - name: Jalankan alur konversi (dua mode per dokumen)
+        run: |
+          for pdf in dokumen/*.pdf; do
+            doc=$(basename "$pdf" .pdf)
+            mkdir -p "gambar/$doc"
+            pdftotext -f 1 -l 2 "$pdf" "truth/$doc.txt"
+            pdftoppm -jpeg -r 150 -f 1 -l 2 "$pdf" "gambar/$doc/hal"
+            for mode in ubah asli; do
+              mkdir -p "hasil/out/$doc/$mode"
+              echo "=== $doc / $mode ==="
+              MODE=$mode SAMPLE_DIR="$PWD/gambar/$doc" OUT_DIR="$PWD/hasil/out/$doc/$mode" \
+                flutter test test/e2e_sample_test.dart || echo "GAGAL: $doc / $mode"
+            done
+          done
+          mv truth hasil/truth
+
+      - name: Bandingkan dengan teks asli
+        run: |
+          set +e
+          python3 tool/uji_dokumen.py hasil > ringkasan.md
+          code=$?
+          cat ringkasan.md >> "$GITHUB_STEP_SUMMARY"
+          cat ringkasan.md
+          exit $code
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hasil-uji-dokumen
+          path: |
+            hasil/out/*/*/hasil.docx
+            hasil/out/*/*/hasil.xlsx
+            hasil/out/*/*/hasil.txt
+            ringkasan.md
+          retention-days: 14
