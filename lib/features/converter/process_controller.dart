@@ -54,6 +54,10 @@ class ProcessController extends Notifier<ProcessState> {
   List<String> _pageImages = const [];
   String _id = '';
   ConvertedContent? _original;
+  ResultMode _mode = ResultMode.edit;
+
+  /// Mode hasil yang dipakai pada konversi terakhir.
+  ResultMode get mode => _mode;
 
   void reset() {
     if (state.step != ProcessStep.running) {
@@ -67,9 +71,12 @@ class ProcessController extends Notifier<ProcessState> {
       step: ProcessStep.running, message: message, progress: value);
 
   /// Analisis & baca dokumen, lalu berhenti di pratinjau.
-  /// [choice] null = otomatis.
-  Future<void> run(ProcessRequest req, OutputType? choice) async {
+  /// [choice] null = otomatis. [mode] menentukan apakah isi dirapikan &
+  /// dikoreksi otomatis atau dipertahankan persis seperti terbaca.
+  Future<void> run(ProcessRequest req, OutputType? choice,
+      {ResultMode mode = ResultMode.edit}) async {
     if (state.step == ProcessStep.running) return;
+    _mode = mode;
     _progress('Menyiapkan halaman...');
     final files = ref.read(fileServiceProvider);
     final settings = ref.read(settingsProvider);
@@ -100,6 +107,7 @@ class ProcessController extends Notifier<ProcessState> {
               force: choice == OutputType.xlsx ? DocumentKind.table : null,
               cellOcr: settings.cellOcr,
               dictionary: settings.dictionary,
+              keepOriginal: mode == ResultMode.original,
             ),
             onProgress: _progress,
           );

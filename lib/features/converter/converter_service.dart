@@ -12,7 +12,11 @@ class ConvertOptions {
     this.force,
     this.cellOcr = true,
     this.dictionary = const [],
+    this.keepOriginal = false,
   });
+
+  /// true = isi dipakai persis seperti terbaca (tanpa koreksi otomatis).
+  final bool keepOriginal;
 
   /// null = otomatis (tabel bila >= setengah halaman bertabel).
   final DocumentKind? force;
@@ -71,7 +75,8 @@ class ConverterService {
       pages.add(AssemblyPage(analysis, page, mosA, mosB));
     }
     onProgress?.call('Memeriksa konsistensi isi tabel...', null);
-    final content = await _assemble(pages, options.force, options.dictionary);
+    final content = await _assemble(
+        pages, options.force, options.dictionary, options.keepOriginal);
     return ConversionResult(
       content,
       OcrResult(engine: OcrEngineId.mlkit, pages: ocrPages),
@@ -99,8 +104,8 @@ class ConverterService {
             cellOcr: cellOcr,
           ));
 
-  static Future<ConvertedContent> _assemble(
-          List<AssemblyPage> pages, DocumentKind? force, List<String> dict) =>
-      Isolate.run(() =>
-          PageAssembler.assemble(pages, force: force, dictionary: dict));
+  static Future<ConvertedContent> _assemble(List<AssemblyPage> pages,
+          DocumentKind? force, List<String> dict, bool keepOriginal) =>
+      Isolate.run(() => PageAssembler.assemble(pages,
+          force: force, dictionary: dict, keepOriginal: keepOriginal));
 }

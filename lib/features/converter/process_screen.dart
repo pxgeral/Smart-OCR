@@ -21,6 +21,7 @@ class ProcessScreen extends ConsumerStatefulWidget {
 
 class _ProcessScreenState extends ConsumerState<ProcessScreen> {
   OutputType? _choice; // null = otomatis
+  ResultMode _mode = ResultMode.edit;
 
   @override
   void initState() {
@@ -46,6 +47,21 @@ class _ProcessScreenState extends ConsumerState<ProcessScreen> {
           _Pages(request: req),
           const SizedBox(height: 16),
           if (s.step == ProcessStep.idle || s.step == ProcessStep.failed || running && s.content == null) ...[
+            Text('Isi dokumen', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            SegmentedButton<ResultMode>(
+              showSelectedIcon: false,
+              segments: [
+                for (final m in ResultMode.values)
+                  ButtonSegment<ResultMode>(value: m, label: Text(m.label)),
+              ],
+              selected: {_mode},
+              onSelectionChanged:
+                  running ? null : (v) => setState(() => _mode = v.first),
+            ),
+            const SizedBox(height: 6),
+            Text(_mode.hint, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 16),
             Text('Hasil keluaran', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             _FormatChips(
@@ -68,7 +84,9 @@ class _ProcessScreenState extends ConsumerState<ProcessScreen> {
             FilledButton.icon(
               icon: const Icon(Icons.play_arrow),
               label: Text(s.step == ProcessStep.failed ? 'Coba lagi' : 'Baca & pratinjau'),
-              onPressed: () => ref.read(processControllerProvider.notifier).run(req, _choice),
+              onPressed: () => ref
+                  .read(processControllerProvider.notifier)
+                  .run(req, _choice, mode: _mode),
             ),
           if (!running && (s.step == ProcessStep.preview || s.step == ProcessStep.done) && s.content != null)
             _Preview(state: s),
@@ -134,6 +152,7 @@ class _PreviewState extends ConsumerState<_Preview> {
     final review = c.reviewCount, errors = c.errorCount;
     final ctrl = ref.read(processControllerProvider.notifier);
     final done = s.step == ProcessStep.done && s.project != null;
+    final keepOriginal = ctrl.mode == ResultMode.original;
     final theme = Theme.of(context);
 
     return Column(
@@ -157,6 +176,14 @@ class _PreviewState extends ConsumerState<_Preview> {
             ]),
           ),
         ),
+        if (keepOriginal)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Mode "Seperti aslinya": isi tidak dikoreksi otomatis.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
         for (final w in s.warnings)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -211,7 +238,9 @@ class _PreviewState extends ConsumerState<_Preview> {
             ctrl.touch();
           },
         ),
-        const SizedBox(height: 8),
+        // terjemahan mengubah isi, jadi tidak ditawarkan pada mode "seperti aslinya"
+        if (!keepOriginal) const SizedBox(height: 8),
+        if (!keepOriginal)
         Row(children: [
           Expanded(
             child: OutlinedButton.icon(

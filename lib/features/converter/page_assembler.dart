@@ -27,6 +27,7 @@ abstract final class PageAssembler {
     List<AssemblyPage> pages, {
     DocumentKind? force,
     List<String> dictionary = const [],
+    bool keepOriginal = false,
   }) {
     final withTables = pages
         .where((p) => p.analysis.tables
@@ -48,7 +49,8 @@ abstract final class PageAssembler {
     if (force == null && kind == DocumentKind.table && !foundAny) {
       kind = DocumentKind.document;
     }
-    CellVerifier.verify(verify, dictionary: dictionary);
+    CellVerifier.verify(verify,
+        dictionary: dictionary, keepOriginal: keepOriginal);
     return ConvertedContent(kind: kind, pages: out);
   }
 
