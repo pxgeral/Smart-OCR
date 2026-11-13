@@ -16,3 +16,8 @@ android/app/release
 *.iml
 .idea/
 .DS_Store
+
+# model terjemahan offline: diunduh CI (tool/ambil_model.sh)
+assets/models/**/*.onnx
+assets/models/**/*.spm
+assets/models/**/vocab.json

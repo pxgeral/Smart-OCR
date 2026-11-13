@@ -9,6 +9,8 @@ on:
       - 'android/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+      - 'assets/**'
+      - 'tool/ambil_model.sh'
       - '.github/workflows/main.yml'
 
 permissions:
@@ -21,7 +23,7 @@ concurrency:
 jobs:
   apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +38,15 @@ jobs:
           cache: true
           cache-key: ${{ hashFiles('pubspec.lock') }}
 
+      - name: Cache model terjemahan offline
+        uses: actions/cache@v4
+        with:
+          path: assets/models
+          key: model-opus-mt-${{ hashFiles('tool/ambil_model.sh') }}
+
+      - name: Unduh model terjemahan offline (ikut terkemas di APK)
+        run: bash tool/ambil_model.sh
+
       - name: Resolve dependencies
         run: flutter pub get
 
@@ -47,7 +58,9 @@ jobs:
         continue-on-error: true
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release
+          ls -la build/app/outputs/flutter-apk/app-release.apk
 
       - uses: actions/upload-artifact@v4
         with:

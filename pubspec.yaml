@@ -1,7 +1,7 @@
 name: smart_ocr_converter
 description: Foto & PDF ke Word/Excel dengan OCR.
 publish_to: none
-version: 1.5.1+9
+version: 1.6.0+10
 
 environment:
   sdk: ">=3.12.0 <4.0.0"
@@ -23,6 +23,9 @@ dependencies:
   # terjemahan di perangkat (model bahasa diunduh sekali, lalu offline)
   google_mlkit_translation: ^0.15.1
   image: ^4.12.0
+  # terjemahan offline bawaan (model OPUS-MT ONNX ikut di dalam APK)
+  onnxruntime: ^1.4.1
+  ffi: ^2.1.0
   # export (DOCX & XLSX dibuat sendiri: ZIP + XML)
   pdf: ^3.11.0
   share_plus: ^13.3.1
@@ -35,3 +38,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    # diisi CI lewat tool/ambil_model.sh (tidak disimpan di git)
+    - assets/models/id-en/
+    - assets/models/en-id/

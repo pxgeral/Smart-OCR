@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 
 import '../../models/converted_content.dart';
+import 'offline/model_assets.dart';
+import 'offline_translation_service.dart';
 import 'translation_service.dart';
 
 class TranslateResult {
@@ -32,6 +34,8 @@ class _TranslateSheet extends StatefulWidget {
 
 class _TranslateSheetState extends State<_TranslateSheet> {
   final _service = TranslationService();
+  final _offline = OfflineTranslationService();
+  final _ready = <String>{}; // arah model offline yang ikut terkemas di APK
   TranslateLanguage _from = TranslateLanguage.indonesian;
   TranslateLanguage _to = TranslateLanguage.english;
   bool _busy = false;
@@ -39,8 +43,26 @@ class _TranslateSheetState extends State<_TranslateSheet> {
   double? _progress;
   String? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    () async {
+      for (final d in const ['id-en', 'en-id']) {
+        if (await OfflineModelAssets.available(d)) _ready.add(d);
+      }
+      if (mounted) setState(() {});
+    }();
+  }
+
+  /// true bila pasangan bahasa terpilih bisa diterjemahkan offline (bawaan).
+  bool get _offlinePair {
+    final d = OfflineTranslationService.directionFor(_from, _to);
+    return d != null && _ready.contains(d);
+  }
+
   void _cancel() {
     _service.cancel();
+    _offline.cancel();
     if (mounted) Navigator.pop(context);
   }
 
@@ -56,19 +78,20 @@ class _TranslateSheetState extends State<_TranslateSheet> {
       _progress = null;
     });
     try {
-      final out = await _service.translate(
-        widget.source,
-        from: _from,
-        to: _to,
-        onProgress: (m, p) {
-          if (mounted) {
-            setState(() {
-              _msg = m;
-              _progress = p;
-            });
-          }
-        },
-      );
+      void onProgress(String m, double? p) {
+        if (mounted) {
+          setState(() {
+            _msg = m;
+            _progress = p;
+          });
+        }
+      }
+
+      final out = _offlinePair
+          ? await _offline.translate(widget.source,
+              from: _from, to: _to, onProgress: onProgress)
+          : await _service.translate(widget.source,
+              from: _from, to: _to, onProgress: onProgress);
       if (mounted) {
         Navigator.pop(context, TranslateResult(out, translateLanguages[_to] ?? _to.name));
       }
@@ -112,9 +135,17 @@ class _TranslateSheetState extends State<_TranslateSheet> {
           Text('Terjemahkan dokumen', style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
           Text(
-            'Diterjemahkan di HP (Google ML Kit). Model tiap bahasa ±30 MB diunduh sekali saat '
-            'pertama dipakai, setelahnya bisa offline. Angka, tanggal, dan struktur tabel tidak diubah.',
+            'Diterjemahkan di HP. Angka, tanggal, dan struktur tabel tidak diubah.',
             style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _offlinePair
+                ? 'Indonesia↔Inggris memakai model bawaan aplikasi: tanpa unduhan dan tanpa internet.'
+                : 'Pasangan bahasa ini memakai Google ML Kit: model bahasa ±30 MB diunduh sekali '
+                    'saat pertama dipakai.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.primary),
           ),
           const SizedBox(height: 16),
           _picker('Dari bahasa', _from, (v) => setState(() => _from = v)),
