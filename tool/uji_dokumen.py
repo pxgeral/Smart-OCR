@@ -33,6 +33,17 @@ def score(truth: list[str], out: list[str]):
     return recall, precision, f1, seq
 
 
+def missing(truth: list[str], out: list[str], limit: int = 30) -> list[str]:
+    """Kata asli yang tidak muncul di hasil (menurut jumlah), urut kemunculan."""
+    left = Counter(truth) - Counter(out)
+    seen, res = Counter(), []
+    for w in truth:
+        if seen[w] < left[w]:
+            seen[w] += 1
+            res.append(w)
+    return res[:limit]
+
+
 def check_docx(path: Path) -> str:
     try:
         import docx  # python-docx
@@ -55,7 +66,7 @@ def check_xlsx(path: Path) -> str:
 
 def main() -> int:
     root = Path(sys.argv[1])
-    rows, bad, scored = [], 0, 0
+    rows, bad, scored, notes = [], 0, 0, []
     for truth_file in sorted((root / "truth").glob("*.txt")):
         doc = truth_file.stem
         truth = words(truth_file.read_text(encoding="utf-8", errors="ignore"))
@@ -77,9 +88,16 @@ def main() -> int:
                 f"| {doc} | {mode} | {len(truth)} | {len(out)} | {r:.0%} | {p:.0%} | {seq:.0%} | "
                 f"DOCX: {dx}; XLSX: {xl} |"
             )
+            if mode == "ubah" and r < 0.995:
+                miss = missing(truth, out)
+                notes.append(f"- **{doc}** kata asli yang hilang/salah baca: {', '.join(miss) or '-'}")
+                if len(out) <= 150:
+                    notes.append(f"  - teks hasil: `{' '.join(out)}`")
     print("| Dokumen | Mode | Kata asli | Kata hasil | Recall | Presisi | Kemiripan urutan | Berkas |")
     print("|---|---|---:|---:|---:|---:|---:|---|")
     print("\n".join(rows))
+    if notes:
+        print("\n" + "\n".join(notes))
     print(
         "\nRecall = porsi kata asli yang muncul di hasil; Presisi = porsi kata hasil yang benar. "
         "Pembaca OCR di uji ini Tesseract (ML Kit hanya berjalan di Android), "
