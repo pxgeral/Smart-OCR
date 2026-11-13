@@ -10,6 +10,10 @@ Aplikasi Flutter untuk mengubah hasil scan, foto, dan PDF menjadi dokumen Word (
 - Mengekspor PDF searchable, DOCX, XLSX, dan TXT.
 - Menyimpan riwayat, hasil terstruktur, dan gambar halaman agar bisa ditinjau & diekspor ulang.
 
+### Baru di 1.5.1
+
+- **Perbaikan terjemahan**: unduhan model bahasa tidak lagi bisa macet tanpa akhir. Ada pemeriksaan internet di awal, waktu berjalan yang terlihat, batas waktu 5 menit dengan pesan yang jelas, dan tombol **Batal** (serta tombol kembali) yang berfungsi selama unduhan. Model yang sudah selesai terunduh langsung dikenali.
+
 ### Baru di 1.5
 
 - **Pilihan isi dokumen** sebelum membaca: **Ubah & rapikan** (koreksi otomatis O→0, jam, tanggal, ejaan, dan rumus rata-rata, seperti sebelumnya) atau **Seperti aslinya** (isi dipakai persis seperti terbaca, tanpa koreksi; sel yang meragukan tetap ditandai untuk dicek). Pada mode "seperti aslinya" angka ditulis sebagai teks apa adanya dan terjemahan tidak ditawarkan.

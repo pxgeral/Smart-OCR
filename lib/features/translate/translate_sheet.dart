@@ -39,6 +39,11 @@ class _TranslateSheetState extends State<_TranslateSheet> {
   double? _progress;
   String? _error;
 
+  void _cancel() {
+    _service.cancel();
+    if (mounted) Navigator.pop(context);
+  }
+
   Future<void> _run() async {
     if (_from == _to) {
       setState(() => _error = 'Bahasa asal dan tujuan sama.');
@@ -67,11 +72,13 @@ class _TranslateSheetState extends State<_TranslateSheet> {
       if (mounted) {
         Navigator.pop(context, TranslateResult(out, translateLanguages[_to] ?? _to.name));
       }
+    } on TranslationCancelled {
+      // sheet sudah ditutup oleh _cancel()
     } catch (e) {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = 'Gagal menerjemahkan: $e';
+          _error = 'Gagal menerjemahkan: ${e is StateError ? e.message : e}';
         });
       }
     }
@@ -91,7 +98,12 @@ class _TranslateSheetState extends State<_TranslateSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
+    return PopScope(
+      canPop: !_busy,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _cancel();
+      },
+      child: Padding(
       padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewInsets.bottom + 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -134,7 +146,7 @@ class _TranslateSheetState extends State<_TranslateSheet> {
           ],
           Row(children: [
             TextButton(
-              onPressed: _busy ? null : () => Navigator.pop(context),
+              onPressed: _busy ? _cancel : () => Navigator.pop(context),
               child: const Text('Batal'),
             ),
             const Spacer(),
@@ -146,6 +158,7 @@ class _TranslateSheetState extends State<_TranslateSheet> {
           ]),
         ],
       ),
+    ),
     );
   }
 }
