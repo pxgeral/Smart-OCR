@@ -1,0 +1,34 @@
+name: API Dump Sementara
+on:
+  push:
+    branches: [terjemahan-offline]
+    paths: ['.github/workflows/api-dump-sementara.yml']
+permissions:
+  contents: read
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: {channel: stable, cache: true}
+      - name: Ambil paket onnxruntime
+        run: |
+          flutter --version | head -2
+          mkdir -p /tmp/probe && cd /tmp/probe
+          flutter create --project-name probe . >/dev/null 2>&1
+          flutter pub add onnxruntime >/dev/null 2>&1
+          flutter pub get >/dev/null 2>&1
+          D=$(find ~/.pub-cache/hosted -maxdepth 2 -type d -name 'onnxruntime-*' | head -1)
+          echo "DIR=$D"
+          ls "$D" "$D/lib/src" "$D/android" "$D/linux" 2>&1 | head -60
+          echo "=== signatures"
+          grep -rhn "static .*create\|factory\|List<OrtValue?>\? run\|Future<List<OrtValue?>?> runAsync\|OrtSession\.\(fromBuffer\|fromFile\)\|dynamic get value\|get value\|enum ONNXTensorElementDataType\|void release\|init()" "$D/lib/src" | head -60
+          echo "=== value impl"
+          sed -n 1,200p "$D/lib/src/ort_value.dart" 2>/dev/null | head -260
+          echo "=== env / library load"
+          grep -rn "DynamicLibrary\|libonnxruntime\|GetApi\|ORT_API_VERSION\|ortApiVersion" "$D/lib" | head -20
+          echo "=== android gradle / ort version"
+          cat "$D/android/build.gradle" 2>/dev/null | head -60
+          ls "$D/android/src/main" 2>/dev/null
