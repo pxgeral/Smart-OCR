@@ -23,12 +23,16 @@ jobs:
           D=$(find ~/.pub-cache/hosted -maxdepth 2 -type d -name 'onnxruntime-*' | head -1)
           echo "DIR=$D"
           ls "$D" "$D/lib/src" "$D/android" "$D/linux" 2>&1 | head -60
-          echo "=== signatures"
-          grep -rhn "static .*create\|factory\|List<OrtValue?>\? run\|Future<List<OrtValue?>?> runAsync\|OrtSession\.\(fromBuffer\|fromFile\)\|dynamic get value\|get value\|enum ONNXTensorElementDataType\|void release\|init()" "$D/lib/src" | head -60
-          echo "=== value impl"
-          sed -n 1,200p "$D/lib/src/ort_value.dart" 2>/dev/null | head -260
-          echo "=== env / library load"
-          grep -rn "DynamicLibrary\|libonnxruntime\|GetApi\|ORT_API_VERSION\|ortApiVersion" "$D/lib" | head -20
-          echo "=== android gradle / ort version"
-          cat "$D/android/build.gradle" 2>/dev/null | head -60
-          ls "$D/android/src/main" 2>/dev/null
+          echo "=== ort_value 200-520"
+          sed -n 200,520p "$D/lib/src/ort_value.dart"
+          echo "=== ort_session run 140-235"
+          sed -n 140,235p "$D/lib/src/ort_session.dart"
+          echo "=== android build.gradle"
+          cat "$D/android/build.gradle"
+          echo "=== android native libs"
+          find "$D/android" "$D/linux" -name '*.so*' -o -name '*.aar' -o -name '*.jar' | head
+          grep -n "ONNX\|onnxruntime\|aar\|jniLibs\|abiFilters" "$D/android/build.gradle" "$D/android/settings.gradle" | head -20
+          echo "=== pubspec"
+          cat "$D/pubspec.yaml"
+          echo "=== dart sdk constraint"
+          dart --version
