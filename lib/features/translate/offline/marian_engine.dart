@@ -6,7 +6,6 @@ import 'package:ffi/ffi.dart';
 import 'package:onnxruntime/onnxruntime.dart';
 import 'package:onnxruntime/src/bindings/onnxruntime_bindings_generated.dart'
     as bg;
-import 'package:onnxruntime/src/ort_status.dart';
 
 import 'marian_tokenizer.dart';
 
@@ -114,7 +113,7 @@ class MarianEngine {
           logits.ptr, dataPtrPtr);
       OrtStatus.checkOrtStatus(status);
       final base = dataPtrPtr.value.cast<ffi.Float>();
-      final view = base.elementAt(row * vocab).asTypedList(vocab);
+      final view = (base + row * vocab).asTypedList(vocab);
       var best = -1;
       var bestValue = double.negativeInfinity;
       for (var i = 0; i < vocab; i++) {

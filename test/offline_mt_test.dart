@@ -111,7 +111,12 @@ void main() {
     final engines = <String, MarianEngine>{};
 
     setUpAll(() {
-      refs = (jsonDecode(File(refPath!).readAsStringSync()) as List)
+      // setUpAll tetap berjalan walau tesnya dilewati, jadi jaga bila env kosong
+      if (refPath == null) {
+        refs = const [];
+        return;
+      }
+      refs = (jsonDecode(File(refPath).readAsStringSync()) as List)
           .cast<Map<String, dynamic>>();
     });
     tearDownAll(() {

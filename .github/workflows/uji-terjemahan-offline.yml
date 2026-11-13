@@ -56,7 +56,7 @@ jobs:
         run: |
           LIB=$(find "$HOME/.pub-cache/hosted/pub.dev" -path '*onnxruntime-*/linux/libonnxruntime.so.*' | head -1)
           echo "ORT: $LIB"
-          mkdir -p ortlib && ln -sf "$LIB" ortlib/libonnxruntime.so
+          mkdir -p ortlib && ln -sf "$LIB" "ortlib/$(basename "$LIB")" && ln -sf "$LIB" ortlib/libonnxruntime.so
           LD_LIBRARY_PATH="$PWD/ortlib" MODELS_DIR="$PWD/assets/models" REF_JSON="$PWD/ref.json" \
             flutter test test/offline_mt_test.dart --reporter expanded
 
